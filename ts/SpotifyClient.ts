@@ -1,0 +1,427 @@
+import { EventEmitter } from "events";
+import { WebSocket } from "@clusterws/cws";
+import got from "got/dist/source";
+import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE } from "./const";
+import { makeid } from "./util";
+
+type SpotifyPayloadType = "ping" | "pong" | "message";
+
+interface SpotifyPayload {
+  type: SpotifyPayloadType;
+  uri?: string;
+  headers?: Record<string, string>;
+  payloads?: any[];
+}
+
+interface SpotifyDevice {
+  can_play: boolean;
+  volume: number;
+  name: string;
+  capabilities: {
+    can_be_player: boolean;
+    gaia_eq_connect_id: boolean;
+    supports_logout: boolean;
+    is_observable: boolean;
+    volume_steps: number;
+    supported_types: string[];
+    command_acks: boolean;
+    supports_playlist_v2: boolean;
+    is_controllable: boolean;
+    supports_external_episodes: boolean;
+    supports_command_request: boolean;
+  };
+  metadata: Array<{
+    type: string;
+    metadata: string;
+  }>;
+  device_software_version: string;
+  device_type: string;
+  spirc_version: string;
+  device_id: string;
+  client_id: string;
+  brand: string;
+  model: string;
+}
+
+interface SpotifyTrack {
+  uri: string;
+  uid: string;
+  provider: string;
+  metadata: {
+    atrist_uri: string;
+    is_explicit: "true" | "false";
+    is_local: "true" | "false";
+    album_disc_number: string;
+    title: string;
+    album_disc_count: string;
+    album_artist_name: string;
+    duration: string;
+    ['collection.in_collection']: string;
+    album_track_number: string;
+    image_xlarge_url: string;
+    popularity: string;
+    iteration: string;
+    ['collection.can_add']: string;
+    has_lyrics: "true" | "false";
+    artist_name: string;
+    image_large_url: string;
+    available_file_formats: string;
+    context_uri: string;
+    player: string;
+    album_title: string;
+    album_uri: string;
+    album_track_count: string;
+    image_small_url: string;
+    image_url: string;
+    entity_uri: string;
+  }
+}
+
+interface PlayerState {
+  timestamp: string;
+  context_uri: string;
+  context_url: string;
+  context_restrictions: any;
+  play_origin: {
+    feature_identifier: string;
+    feature_version: string;
+    view_uri: string;
+    referrer_identifier: string;
+  };
+  index: {
+    page: number;
+    track: number;
+  };
+  track: SpotifyTrack;
+  playback_id: string;
+  playback_speed: number;
+  position_as_of_timestamp: string;
+  duration: string;
+  is_playing: boolean;
+  is_paused: boolean;
+  is_system_initiated: boolean;
+  options: PlaybackOptions;
+  restrictions: Record<string, string[]>;
+  suppressions: Record<string, string[]>;
+  prev_tracks: SpotifyTrack[];
+  next_tracks: SpotifyTrack[];
+  context_metdata: {
+    ['zelda.context_uri']: string;
+    context_owner: string;
+    context_description: string;
+    image_url: string;
+  };
+  page_metadata: any;
+  session_id: string;
+  queue_revision: string;
+}
+
+interface PlaybackOptions {
+  shuffling_context: boolean;
+  repeating_context: boolean;
+  repeating_track: boolean;
+}
+
+interface StateChangePayload {
+  cluster: {
+    timestamp: string;
+    active_device_id: string;
+    player_state: PlayerState;
+    devices: Record<string, SpotifyDevice>;
+    transfer_data_timestamp: string;
+  }
+  update_reason: string;
+  devices_that_changed: string[];
+}
+
+function isSpotifyPayload(payload: any): payload is SpotifyPayload {
+  return 'type' in payload;
+}
+
+export declare interface SpotifyClient {
+  on(event: 'volume', listener: (vol: number) => any): this;
+  on(event: 'playing', listener: () => any): this;
+  on(event: 'stopped', listener: () => any): this;
+  on(event: 'paused', listener: () => any): this;
+  on(event: 'resumed', listener: () => any): this;
+  on(event: 'track', listener: (track: SpotifyTrack) => any): this;
+  on(event: 'options', listener: (opts: PlaybackOptions) => any): this;
+  on(event: 'position', listener: (pos: string) => any): this;
+  on(event: 'device', listener: (device: SpotifyDevice) => any): this;
+  on(event: 'close', listener: () => any): this;
+  on(event: string, listener: Function): this;
+}
+
+export class SpotifyClient extends EventEmitter {
+  // these variables are used to diff the state on each state change packet, as each packet includes /everything/
+  private _playerState: PlayerState = null!;
+  private _lastTrack: string | null = null;
+  private _isPlaying: boolean = false;
+  private _isPaused: boolean = false;
+  private _lastOptions: string | null = null;
+  private _lastPosition: string | null = null;
+  private _lastVolume: number = NaN;
+  private _devices: Record<string, SpotifyDevice> = {};
+  private _activeDeviceID: string | null = null;
+
+  constructor(public readonly socket: WebSocket, private token: string) {
+    super();
+    socket.onmessage = this.processRawMessage.bind(this);
+    socket.onclose = this.emit.bind(this, "close");
+  }
+
+  /**
+   * Ping Spotify in 30 seconds
+   */
+  deferredPing() {
+    return setTimeout(() => this.ping(), 1000 * 30);
+  }
+
+  ping() {
+    this.send({ type: "ping" })
+  }
+
+  /**
+   * Send a payload to spotify
+   * @param payload payload to send
+   */
+  send(payload: SpotifyPayload) {
+    if (process.env.SPOTIFY_DEBUG) {
+      console.debug({
+        module: "sactivity",
+        action: "spotify_outbound",
+        payload
+      });
+    }
+    this.socket.send(JSON.stringify(payload));
+  }
+
+  /**
+   * Returns the name of a device with the given ID
+   * @param id device ID
+   */
+  deviceName(id: string): string {
+    return this.devices[id]?.name;
+  }
+
+  /**
+   * Spotify Devices
+   */
+  get devices() {
+    return this._devices;
+  }
+
+  /**
+   * The current track
+   */
+  get track() {
+    return this.playerState.track;
+  }
+
+  set devices(devices) {
+    this._devices = devices;
+
+    // emit volume change if it did change on the active device
+    if (this.activeDevice && this.activeDevice.volume !== this._lastVolume) {
+      this.emit("volume", this._lastVolume = this.activeDevice.volume);
+    }
+  }
+
+  /**
+   * The latest PlayerState
+   */
+  get playerState() {
+    return this._playerState;
+  }
+
+  set playerState(playerState) {
+    this._playerState = playerState;
+
+    // if playing state did change, emit the change
+    if (playerState.is_playing !== this._isPlaying) {
+      this._isPlaying = playerState.is_playing;
+      this.emit(this._isPlaying ? "playing" : "stopped");
+    }
+
+    // if pause state did change, emit the change
+    if (playerState.is_paused !== this._isPaused) {
+      this._isPaused = playerState.is_paused;
+      this.emit(this._isPaused ? "paused" : "resumed");
+    }
+
+    // if track UID did change, emit the change
+    if (playerState.track) {
+      if (playerState.track.uid !== this._lastTrack) {
+        this._lastTrack = playerState.track.uid;
+        this.emit("track", playerState.track);
+      }
+    }
+
+    // if playback options did change (shuffle, repeat, repeat song), emit the options as a whole
+    if (playerState.options) {
+      const stringToken = JSON.stringify(playerState.options);
+      if (stringToken !== this._lastOptions) {
+        this._lastOptions = stringToken;
+        this.emit("options", playerState.options);
+      }
+    }
+
+    // if position in song did change, emit the change
+    if (playerState.position_as_of_timestamp !== this._lastPosition) {
+      this.emit("position", this._lastPosition = playerState.position_as_of_timestamp);
+    }
+  }
+
+  /**
+   * The currently playing Spotify Device
+   */
+  get activeDevice() {
+    if (!this.activeDeviceID) return null;
+    return this.devices[this.activeDeviceID];
+  }
+
+  /**
+   * The ID of the currently playing Spotify Device
+   */
+  get activeDeviceID() {
+    return this._activeDeviceID;
+  }
+
+  set activeDeviceID(deviceID) {
+    const lastDevice = this._activeDeviceID;
+    this._activeDeviceID = deviceID;
+
+    // if the active device ID did change, emit the change
+    if (lastDevice !== deviceID) {
+      this.emit("device", this.activeDevice);
+    }
+  }
+
+  /**
+   * Update internal values according to a state change payload
+   * @param param0 payload
+   */
+  private handleStateChange({ cluster: { active_device_id, player_state, devices }, devices_that_changed }: StateChangePayload) {
+    this.devices = devices;
+    this.activeDeviceID = active_device_id;
+    this.playerState = player_state;
+  }
+
+  /**
+   * Process a payload from the dealer
+   * @param payload payload to process
+   */
+  private processMessage(payload: SpotifyPayload) {
+    if (payload.type !== "message") return;
+
+    if (process.env.SPOTIFY_DEBUG) {
+      console.debug({
+        module: "sactivity",
+        action: "inbound",
+        payload
+      });
+    }
+
+    switch (payload.uri) {
+      case "hm://connect-state/v1/cluster": {
+        // possible state change
+        if (!(payload.payloads && Array.isArray(payload.payloads))) {
+          // nvm?
+          return;
+        }
+        payload.payloads.forEach(payload => {
+          if ('update_reason' in payload && payload['update_reason'] === 'DEVICE_STATE_CHANGED') {
+            this.handleStateChange(payload);
+          }
+        });
+      }
+      default: {
+        if (payload.uri) {
+          if (payload.uri.startsWith('hm://pusher/v1/connections/') && payload.headers) {
+            const { ['Spotify-Connection-Id']: connectionID } = payload.headers;
+            this.subscribe(encodeURIComponent(connectionID)).then(() => this.trackDevice(connectionID)).then(() => this.ping()).then(() => this.connectState(connectionID));
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Process a raw message from the dealer
+   * @param message message to process
+   */
+  private processRawMessage(message: any) {
+    var payload;
+    try {
+      payload = JSON.parse(message);
+    } catch (e) {
+      this.emit('error', e);
+      return;
+    }
+
+    if (!isSpotifyPayload(payload)) {
+      return;
+    }
+
+    switch (payload.type) {
+      case "message": {
+        this.processMessage(payload);
+        break;
+      }
+      case "pong": {
+        this.deferredPing();
+        break;
+      }
+    }
+  }
+
+  private subscribe(connectionID: string) {
+    return got.put(SPOTIFY_SUBSCRIBE(connectionID), {
+      headers: {
+        authorization: `Bearer ${this.token}`,
+        origin: 'https://open.spotify.com',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.163 Safari/537.36',
+        'sec-fetch-site': 'same-site',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-dest': 'empty'
+      },
+      responseType: 'json'
+    });
+  }
+
+  private _deviceID: string = makeid(40);
+
+  private trackDevice(connectionID: string) {
+    return got.post(SPOTIFY_TRACK, {
+      headers: {
+        authorization: `Bearer ${this.token}`,
+        ...SPOTIFY_HEADERS
+      },
+      body: JSON.stringify({ "device": { "brand": "spotify", "capabilities": { "change_volume": true, "audio_podcasts": true, "enable_play_token": true, "play_token_lost_behavior": "pause", "disable_connect": false, "video_playback": true, "manifest_formats": ["file_urls_mp3", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_ids_video"] }, "device_id": this._deviceID = makeid(40), "device_type": "computer", "metadata": {}, "model": "web_player", "name": "Web Player (Chrome)", "platform_identifier": "web_player osx 10.15.4;chrome 80.0.3987.163;desktop" }, "connection_id": connectionID, "client_version": "harmony:4.0.0-4f6c892", "volume": 65535 })
+    });
+  }
+
+  private connectState(connectionID: string) {
+    return got.put(SPOTIFY_CONNECT_STATE(this._deviceID), {
+      headers: {
+        authorization: `Bearer ${this.token}`,
+        ...SPOTIFY_HEADERS,
+        ['x-spotify-connection-id']: connectionID
+      },
+      body: JSON.stringify({
+        member_type: "CONNECT_STATE",
+        device: {
+          device_info: {
+            capabilities: {
+              can_be_player: false,
+              hidden: true
+            }
+          }
+        }
+      })
+    });
+  }
+}
+
+export default SpotifyClient;

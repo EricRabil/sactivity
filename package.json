@@ -1,0 +1,32 @@
+{
+  "name": "sactivity",
+  "version": "1.0.0",
+  "description": "Spotify WebSocket Activity API Library",
+  "main": "js/index.js",
+  "scripts": {
+    "test": "SPOTIFY_DEBUG=1 node test/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EricRabil/sactivity.git"
+  },
+  "keywords": [
+    "spotify",
+    "sockets",
+    "activity",
+    "internal"
+  ],
+  "author": "Eric Rabil <ericjrabil@gmail.com>",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/EricRabil/sactivity/issues"
+  },
+  "homepage": "https://github.com/EricRabil/sactivity#readme",
+  "dependencies": {
+    "@clusterws/cws": "^1.5.0",
+    "got": "^10.7.0"
+  },
+  "devDependencies": {
+    "readline-sync": "^1.4.10"
+  }
+}
