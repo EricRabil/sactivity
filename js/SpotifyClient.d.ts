@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
+import { SpotifyTrack } from "./types";
 declare type SpotifyPayloadType = "ping" | "pong" | "message";
 interface SpotifyPayload {
     type: SpotifyPayloadType;
@@ -37,37 +38,24 @@ interface SpotifyDevice {
     brand: string;
     model: string;
 }
-interface SpotifyTrack {
+interface SpotifyShallowTrack {
     uri: string;
     uid: string;
     provider: string;
     metadata: {
-        atrist_uri: string;
-        is_explicit: "true" | "false";
-        is_local: "true" | "false";
-        album_disc_number: string;
-        title: string;
-        album_disc_count: string;
-        album_artist_name: string;
-        duration: string;
-        ['collection.in_collection']: string;
-        album_track_number: string;
-        image_xlarge_url: string;
-        popularity: string;
-        iteration: string;
-        ['collection.can_add']: string;
-        has_lyrics: "true" | "false";
-        artist_name: string;
-        image_large_url: string;
-        available_file_formats: string;
         context_uri: string;
         player: string;
         album_title: string;
         album_uri: string;
-        album_track_count: string;
         image_small_url: string;
         image_url: string;
-        entity_uri: string;
+        entity_url: string;
+        ['collection.artist_is_banned']: boolean;
+        image_xlarge_url: string;
+        artist_uri: string;
+        iteration: string;
+        ['collection.is_banned']: boolean;
+        image_large_url: string;
     };
 }
 interface PlayerState {
@@ -85,7 +73,7 @@ interface PlayerState {
         page: number;
         track: number;
     };
-    track: SpotifyTrack;
+    track: SpotifyShallowTrack;
     playback_id: string;
     playback_speed: number;
     position_as_of_timestamp: string;
@@ -96,8 +84,8 @@ interface PlayerState {
     options: PlaybackOptions;
     restrictions: Record<string, string[]>;
     suppressions: Record<string, string[]>;
-    prev_tracks: SpotifyTrack[];
-    next_tracks: SpotifyTrack[];
+    prev_tracks: SpotifyShallowTrack[];
+    next_tracks: SpotifyShallowTrack[];
     context_metdata: {
         ['zelda.context_uri']: string;
         context_owner: string;
@@ -130,6 +118,7 @@ export declare class SpotifyClient extends EventEmitter {
     readonly socket: WebSocket;
     private token;
     private _playerState;
+    private _lastTrackURI;
     private _lastTrack;
     private _isPlaying;
     private _isPaused;
@@ -138,6 +127,7 @@ export declare class SpotifyClient extends EventEmitter {
     private _lastVolume;
     private _devices;
     private _activeDeviceID;
+    private _trackCache;
     constructor(socket: WebSocket, token: string);
     /**
      * Ping Spotify in 30 seconds
@@ -154,6 +144,8 @@ export declare class SpotifyClient extends EventEmitter {
      * @param id device ID
      */
     deviceName(id: string): string;
+    resolve(...ids: string[]): Promise<Record<string, SpotifyTrack>>;
+    resolveURI(...uri: string[]): Promise<Record<string, SpotifyTrack>>;
     /**
      * Spotify Devices
      */
@@ -162,6 +154,7 @@ export declare class SpotifyClient extends EventEmitter {
      * The current track
      */
     get track(): SpotifyTrack;
+    get shallowTrack(): SpotifyShallowTrack;
     set devices(devices: Record<string, SpotifyDevice>);
     /**
      * The latest PlayerState
@@ -177,6 +170,11 @@ export declare class SpotifyClient extends EventEmitter {
      */
     get activeDeviceID(): string | null;
     set activeDeviceID(deviceID: string | null);
+    /**
+     * Returns a deep metadata structure for a track ID
+     * @param ids ids to query
+     */
+    private fetchMetadata;
     /**
      * Update internal values according to a state change payload
      * @param param0 payload

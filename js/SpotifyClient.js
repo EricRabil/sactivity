@@ -17,6 +17,7 @@ class SpotifyClient extends events_1.EventEmitter {
         this.token = token;
         // these variables are used to diff the state on each state change packet, as each packet includes /everything/
         this._playerState = null;
+        this._lastTrackURI = null;
         this._lastTrack = null;
         this._isPlaying = false;
         this._isPaused = false;
@@ -25,6 +26,7 @@ class SpotifyClient extends events_1.EventEmitter {
         this._lastVolume = NaN;
         this._devices = {};
         this._activeDeviceID = null;
+        this._trackCache = {};
         this._deviceID = util_1.makeid(40);
         socket.onmessage = this.processRawMessage.bind(this);
         socket.onclose = this.emit.bind(this, "close");
@@ -60,6 +62,16 @@ class SpotifyClient extends events_1.EventEmitter {
         var _a;
         return (_a = this.devices[id]) === null || _a === void 0 ? void 0 : _a.name;
     }
+    async resolve(...ids) {
+        const pull = await this.fetchMetadata(...ids.filter(id => !this._trackCache[id]));
+        if (Object.keys(pull).length > 0) {
+            Object.entries(pull).forEach(([key, value]) => this._trackCache[key] = value);
+        }
+        return ids.map(id => this._trackCache[id]).reduce((acc, track) => ({ ...acc, [track.id]: track }), {});
+    }
+    async resolveURI(...uri) {
+        return Object.entries(await this.resolve(...uri.map(uri => uri.split(':track:')[1]))).map(([key, value]) => [`spotify:track:${key}`, value]).reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
+    }
     /**
      * Spotify Devices
      */
@@ -70,6 +82,9 @@ class SpotifyClient extends events_1.EventEmitter {
      * The current track
      */
     get track() {
+        return this._lastTrack;
+    }
+    get shallowTrack() {
         return this.playerState.track;
     }
     set devices(devices) {
@@ -99,9 +114,12 @@ class SpotifyClient extends events_1.EventEmitter {
         }
         // if track UID did change, emit the change
         if (playerState.track) {
-            if (playerState.track.uid !== this._lastTrack) {
-                this._lastTrack = playerState.track.uid;
-                this.emit("track", playerState.track);
+            if (playerState.track.uri !== this._lastTrackURI) {
+                this._lastTrackURI = playerState.track.uri;
+                this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
+                    this._lastTrack = track;
+                    this.emit("track", track);
+                });
             }
         }
         // if playback options did change (shuffle, repeat, repeat song), emit the options as a whole
@@ -140,6 +158,27 @@ class SpotifyClient extends events_1.EventEmitter {
         }
     }
     /**
+     * Returns a deep metadata structure for a track ID
+     * @param ids ids to query
+     */
+    async fetchMetadata(...ids) {
+        if (ids.length === 0)
+            return Promise.resolve({});
+        const { body } = await source_1.default.get(const_1.SPOTIFY_TRACK_DATA(ids), {
+            headers: {
+                authorization: `Bearer ${this.token}`,
+                ...const_1.SPOTIFY_HEADERS
+            },
+            responseType: 'json'
+        });
+        if ((typeof body !== "object") || !body)
+            return {};
+        if (!("tracks" in body))
+            return {};
+        const { tracks } = body;
+        return tracks.reduce((a, c) => ({ ...a, [c.id]: c }), {});
+    }
+    /**
      * Update internal values according to a state change payload
      * @param param0 payload
      */
@@ -159,7 +198,7 @@ class SpotifyClient extends events_1.EventEmitter {
             console.debug({
                 module: "sactivity",
                 action: "inbound",
-                payload
+                payload: console.dir(payload, { depth: 6 })
             });
         }
         switch (payload.uri) {

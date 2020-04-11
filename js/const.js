@@ -6,6 +6,7 @@ exports.SPOTIFY_SUBSCRIBE = (connectionID) => `https://api.spotify.com/v1/me/not
 exports.SPOTIFY_TRACK = 'https://guc-spclient.spotify.com/track-playback/v1/devices';
 exports.SPOTIFY_CONNECT_STATE = (clientID) => `https://guc-spclient.spotify.com/connect-state/v1/devices/hobs_${clientID}`;
 exports.SPOTIFY_STREAM = (endpoint, token) => `ws${endpoint.endsWith('443') ? 's' : ''}://${endpoint.split(':')[0]}/?access_token=${token}`;
+exports.SPOTIFY_TRACK_DATA = (tracks) => `https://api.spotify.com/v1/tracks?ids=${tracks.join(',')}&market=from_token`;
 exports.SPOTIFY_HEADERS = {
     'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.163 Safari/537.36',
     'sec-fetch-site': 'same-site',

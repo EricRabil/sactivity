@@ -4,6 +4,7 @@ export declare const SPOTIFY_SUBSCRIBE: (connectionID: string) => string;
 export declare const SPOTIFY_TRACK = "https://guc-spclient.spotify.com/track-playback/v1/devices";
 export declare const SPOTIFY_CONNECT_STATE: (clientID: string) => string;
 export declare const SPOTIFY_STREAM: (endpoint: string, token: string) => string;
+export declare const SPOTIFY_TRACK_DATA: (tracks: string[]) => string;
 export declare const SPOTIFY_HEADERS: {
     'user-agent': string;
     'sec-fetch-site': string;
