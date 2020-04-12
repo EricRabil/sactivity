@@ -1,12 +1,15 @@
 import { WebSocket } from "@clusterws/cws";
 import { SpotifyClient } from "./SpotifyClient";
-export default class Sactivity {
+export interface SpotifyProvider {
+    generateAccessToken(): Promise<string>;
+}
+export default class Sactivity implements SpotifyProvider {
     readonly cookies: string;
     constructor(cookies: string);
     /**
      * Generate an access token from Spotify
      */
-    getAccessToken(): Promise<import("./util").SpotifyTokenResponse>;
+    generateAccessToken(): Promise<string>;
     /**
      * Discover the current Spotify dealers
      */

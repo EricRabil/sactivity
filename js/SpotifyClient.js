@@ -11,10 +11,11 @@ function isSpotifyPayload(payload) {
     return 'type' in payload;
 }
 class SpotifyClient extends events_1.EventEmitter {
-    constructor(socket, token) {
+    constructor(socket, token, provider) {
         super();
         this.socket = socket;
         this.token = token;
+        this.provider = provider;
         // these variables are used to diff the state on each state change packet, as each packet includes /everything/
         this._playerState = null;
         this._lastTrackURI = null;
@@ -164,13 +165,17 @@ class SpotifyClient extends events_1.EventEmitter {
     async fetchMetadata(...ids) {
         if (ids.length === 0)
             return Promise.resolve({});
-        const { body } = await source_1.default.get(const_1.SPOTIFY_TRACK_DATA(ids), {
-            headers: {
-                authorization: `Bearer ${this.token}`,
-                ...const_1.SPOTIFY_HEADERS
-            },
-            responseType: 'json'
-        });
+        const run = async () => {
+            const { body } = await source_1.default.get(const_1.SPOTIFY_TRACK_DATA(ids), {
+                headers: {
+                    authorization: `Bearer ${this.token}`,
+                    ...const_1.SPOTIFY_HEADERS
+                },
+                responseType: 'json'
+            });
+            return body;
+        };
+        const body = await run().catch(e => this.provider.generateAccessToken().then(token => this.token = token).then(() => run()));
         if ((typeof body !== "object") || !body)
             return {};
         if (!("tracks" in body))

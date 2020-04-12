@@ -4,14 +4,18 @@ import { SPOTIFY_TOKEN, SPOTIFY_DISCOVERY, SPOTIFY_STREAM, SPOTIFY_HEADERS } fro
 import { isSpotifyTokenResponse, isSpotifyDiscoveryResponse, SpotifyAPIError } from "./util";
 import { SpotifyClient } from "./SpotifyClient";
 
-export default class Sactivity {
+export interface SpotifyProvider {
+  generateAccessToken(): Promise<string>;
+}
+
+export default class Sactivity implements SpotifyProvider {
   constructor(public readonly cookies: string) {
   }
 
   /**
    * Generate an access token from Spotify
    */
-  async getAccessToken() {
+  async generateAccessToken() {
     const { body: tokenResponse } = await got.get(SPOTIFY_TOKEN, {
       headers: {
         cookie: this.cookies,
@@ -24,7 +28,7 @@ export default class Sactivity {
       throw new SpotifyAPIError(SPOTIFY_TOKEN, tokenResponse);
     }
 
-    return tokenResponse;
+    return tokenResponse.accessToken;
   }
 
   /**
@@ -44,14 +48,14 @@ export default class Sactivity {
    * Connects to Spotify and wraps the socket in a wrapper class
    */
   async connect() {
-    return this._connect().then(({ socket, token }) => new SpotifyClient(socket, token));
+    return this._connect().then(({ socket, token }) => new SpotifyClient(socket, token, this));
   }
 
   /**
    * Connects to Spotify and returns the WebSocket
    */
   async _connect() {
-    const { accessToken: token } = await this.getAccessToken();
+    const token = await this.generateAccessToken();
     const { dealer: dealers } = await this.discoverDealers();
 
     for (let dealer of dealers) {

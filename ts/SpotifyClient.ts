@@ -4,6 +4,7 @@ import got from "got/dist/source";
 import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA } from "./const";
 import { makeid } from "./util";
 import { SpotifyTrack } from "./types";
+import { SpotifyProvider } from ".";
 
 type SpotifyPayloadType = "ping" | "pong" | "message";
 
@@ -154,7 +155,7 @@ export class SpotifyClient extends EventEmitter {
   private _activeDeviceID: string | null = null;
   private _trackCache: Record<string, SpotifyTrack> = {};
 
-  constructor(public readonly socket: WebSocket, private token: string) {
+  constructor(public readonly socket: WebSocket, private token: string, private provider: SpotifyProvider) {
     super();
     socket.onmessage = this.processRawMessage.bind(this);
     socket.onclose = this.emit.bind(this, "close");
@@ -319,13 +320,18 @@ export class SpotifyClient extends EventEmitter {
     }
 
     if (ids.length === 0) return Promise.resolve({});
-    const { body } = await got.get(SPOTIFY_TRACK_DATA(ids), {
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        ...SPOTIFY_HEADERS
-      },
-      responseType: 'json'
-    });
+    const run = async () => {
+      const { body } = await got.get(SPOTIFY_TRACK_DATA(ids), {
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          ...SPOTIFY_HEADERS
+        },
+        responseType: 'json'
+      });
+      return body;
+    }
+
+    const body = await run().catch(e => this.provider.generateAccessToken().then(token => this.token = token).then(() => run()));
 
     if ((typeof body !== "object") || !body) return {};
     if (!("tracks" in body)) return {};

@@ -15,7 +15,7 @@ class Sactivity {
     /**
      * Generate an access token from Spotify
      */
-    async getAccessToken() {
+    async generateAccessToken() {
         const { body: tokenResponse } = await got_1.default.get(const_1.SPOTIFY_TOKEN, {
             headers: {
                 cookie: this.cookies,
@@ -26,7 +26,7 @@ class Sactivity {
         if (!util_1.isSpotifyTokenResponse(tokenResponse)) {
             throw new util_1.SpotifyAPIError(const_1.SPOTIFY_TOKEN, tokenResponse);
         }
-        return tokenResponse;
+        return tokenResponse.accessToken;
     }
     /**
      * Discover the current Spotify dealers
@@ -42,13 +42,13 @@ class Sactivity {
      * Connects to Spotify and wraps the socket in a wrapper class
      */
     async connect() {
-        return this._connect().then(({ socket, token }) => new SpotifyClient_1.SpotifyClient(socket, token));
+        return this._connect().then(({ socket, token }) => new SpotifyClient_1.SpotifyClient(socket, token, this));
     }
     /**
      * Connects to Spotify and returns the WebSocket
      */
     async _connect() {
-        const { accessToken: token } = await this.getAccessToken();
+        const token = await this.generateAccessToken();
         const { dealer: dealers } = await this.discoverDealers();
         for (let dealer of dealers) {
             try {

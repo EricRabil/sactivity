@@ -2,6 +2,7 @@
 import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
 import { SpotifyTrack } from "./types";
+import { SpotifyProvider } from ".";
 declare type SpotifyPayloadType = "ping" | "pong" | "message";
 interface SpotifyPayload {
     type: SpotifyPayloadType;
@@ -117,6 +118,7 @@ export declare interface SpotifyClient {
 export declare class SpotifyClient extends EventEmitter {
     readonly socket: WebSocket;
     private token;
+    private provider;
     private _playerState;
     private _lastTrackURI;
     private _lastTrack;
@@ -128,7 +130,7 @@ export declare class SpotifyClient extends EventEmitter {
     private _devices;
     private _activeDeviceID;
     private _trackCache;
-    constructor(socket: WebSocket, token: string);
+    constructor(socket: WebSocket, token: string, provider: SpotifyProvider);
     /**
      * Ping Spotify in 30 seconds
      */
