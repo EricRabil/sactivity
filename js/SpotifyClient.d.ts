@@ -163,6 +163,7 @@ export declare class SpotifyClient extends EventEmitter {
      */
     get playerState(): PlayerState;
     set playerState(playerState: PlayerState);
+    private _diffPlayerState;
     /**
      * The currently playing Spotify Device
      */

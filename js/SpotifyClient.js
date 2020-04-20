@@ -103,38 +103,43 @@ class SpotifyClient extends events_1.EventEmitter {
     }
     set playerState(playerState) {
         this._playerState = playerState;
-        // if playing state did change, emit the change
-        if (playerState.is_playing !== this._isPlaying) {
-            this._isPlaying = playerState.is_playing;
-            this.emit(this._isPlaying ? "playing" : "stopped");
-        }
-        // if pause state did change, emit the change
-        if (playerState.is_paused !== this._isPaused) {
-            this._isPaused = playerState.is_paused;
-            this.emit(this._isPaused ? "paused" : "resumed");
-        }
+    }
+    async _diffPlayerState() {
+        const playerState = this._playerState;
+        const events = [];
         // if track UID did change, emit the change
         if (playerState.track) {
             if (playerState.track.uri !== this._lastTrackURI) {
                 this._lastTrackURI = playerState.track.uri;
-                this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
+                await this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
                     this._lastTrack = track;
-                    this.emit("track", track);
+                    events.push(["track", track]);
                 });
             }
+        }
+        // if playing state did change, emit the change
+        if (playerState.is_playing !== this._isPlaying) {
+            this._isPlaying = playerState.is_playing;
+            events.push([this._isPlaying ? "playing" : "stopped"]);
+        }
+        // if pause state did change, emit the change
+        if (playerState.is_paused !== this._isPaused) {
+            this._isPaused = playerState.is_paused;
+            events.push([this._isPaused ? "paused" : "resumed"]);
         }
         // if playback options did change (shuffle, repeat, repeat song), emit the options as a whole
         if (playerState.options) {
             const stringToken = JSON.stringify(playerState.options);
             if (stringToken !== this._lastOptions) {
                 this._lastOptions = stringToken;
-                this.emit("options", playerState.options);
+                events.push(["options", playerState.options]);
             }
         }
         // if position in song did change, emit the change
         if (playerState.position_as_of_timestamp !== this._lastPosition) {
-            this.emit("position", this._lastPosition = playerState.position_as_of_timestamp);
+            events.push(["position", this._lastPosition = playerState.position_as_of_timestamp]);
         }
+        events.forEach(([name, ...data]) => this.emit(name, ...data));
     }
     /**
      * The currently playing Spotify Device
