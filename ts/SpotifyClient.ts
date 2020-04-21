@@ -246,6 +246,7 @@ export class SpotifyClient extends EventEmitter {
 
   set playerState(playerState) {
     this._playerState = playerState;
+    this._diffPlayerState();
   }
 
   private async _diffPlayerState() {
