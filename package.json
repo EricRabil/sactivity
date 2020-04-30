@@ -23,7 +23,7 @@
   },
   "homepage": "https://github.com/EricRabil/sactivity#readme",
   "dependencies": {
-    "@clusterws/cws": "^1.5.0",
+    "@clusterws/cws": "github:EricRabil/cWS#pre-gyp",
     "got": "^10.7.0"
   },
   "devDependencies": {
