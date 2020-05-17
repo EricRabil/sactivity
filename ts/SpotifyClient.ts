@@ -51,18 +51,9 @@ interface SpotifyShallowTrack {
   provider: string;
   metadata: {
     context_uri: string;
-    player: string;
-    album_title: string;
-    album_uri: string;
-    image_small_url: string;
-    image_url: string;
-    entity_url: string;
-    ['collection.artist_is_banned']: boolean;
-    image_xlarge_url: string;
-    artist_uri: string;
+    entity_uri: string;
     iteration: string;
-    ['collection.is_banned']: boolean;
-    image_large_url: string;
+    track_player: string;
   }
 }
 
