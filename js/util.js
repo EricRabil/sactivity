@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.makeid = exports.SpotifyAPIError = exports.isSpotifyDiscoveryResponse = exports.isSpotifyTokenResponse = void 0;
 function isSpotifyTokenResponse(data) {
     return 'clientId' in data && 'accessToken' in data && 'accessTokenExpirationTimestampMs' in data && 'isAnonymous' in data;
 }

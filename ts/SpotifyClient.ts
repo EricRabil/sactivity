@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
-import got from "got/dist/source";
-import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA } from "./const";
+import got, { HTTPError } from "got/dist/source";
+import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA, SPOTIFY_AUDIO_ANALYSIS } from "./const";
 import { makeid } from "./util";
 import { SpotifyTrack } from "./types";
 import { SpotifyProvider } from ".";
@@ -114,6 +114,80 @@ interface StateChangePayload {
   devices_that_changed: string[];
 }
 
+export interface AnalysisTimeInterval {
+  start: number;
+  duration: number;
+  confidence: number;
+}
+
+export namespace AnalysisTimeInterval {
+  export function isInterval(obj: unknown): obj is AnalysisTimeInterval {
+    return typeof obj === "object"
+      && obj !== null
+      && typeof (obj as Record<string, unknown>).start === "number"
+      && typeof (obj as Record<string, unknown>).duration === "number"
+      && typeof (obj as Record<string, unknown>).confidence === "number";
+  }
+}
+
+export interface AnalysisSection extends AnalysisTimeInterval {
+  loudness: number;
+  tempo: number;
+  tempo_confidence: number;
+  key: number;
+  key_confidence: number;
+  mode: number;
+  mode_confidence: number;
+  time_signature: number;
+  time_signature_confidence: number;
+}
+
+export interface AnalysisSegment extends AnalysisTimeInterval {
+  loudness_start: number;
+  loudness_max_time: number;
+  loudness_max: number;
+  loudness_end: number;
+  pitches: number[];
+  timbre: number[];
+}
+
+export interface AnalysisTrack {
+  duration: number;
+  sample_md5: string;
+  offset_seconds: number;
+  window_seconds: number;
+  analysis_sample_rate: number;
+  analysis_channels: number;
+  end_of_fade_in: number;
+  start_of_fade_out: number;
+  loudness: number;
+  tempo: number;
+  tempo_confidence: number;
+  time_signature: number;
+  time_signature_confidence: number;
+  key: number;
+  key_confidence: number;
+  mode: number;
+  mode_confidence: number;
+  codestring: string;
+  code_version: number;
+  echoprintstring: string;
+  echoprint_version: number;
+  synchstring: string;
+  synch_version: number;
+  rhyhtmstring: string;
+  rhyhtm_version: number;
+}
+
+export interface AnalysisResult {
+  bars: AnalysisTimeInterval[];
+  beats: AnalysisTimeInterval[];
+  sections: AnalysisSection[];
+  segments: AnalysisSegment[];
+  tatums: AnalysisTimeInterval[];
+  track: AnalysisTrack;
+}
+
 function isSpotifyPayload(payload: any): payload is SpotifyPayload {
   return 'type' in payload;
 }
@@ -125,6 +199,7 @@ export declare interface SpotifyClient {
   on(event: 'paused', listener: () => any): this;
   on(event: 'resumed', listener: () => any): this;
   on(event: 'track', listener: (track: SpotifyTrack) => any): this;
+  on(event: 'trackID', listener: (trackID: string) => any): this;
   on(event: 'options', listener: (opts: PlaybackOptions) => any): this;
   on(event: 'position', listener: (pos: string) => any): this;
   on(event: 'device', listener: (device: SpotifyDevice) => any): this;
@@ -145,6 +220,8 @@ export class SpotifyClient extends EventEmitter {
   private _devices: Record<string, SpotifyDevice> = {};
   private _activeDeviceID: string | null = null;
   private _trackCache: Record<string, SpotifyTrack> = {};
+  public _analysisCache: Record<string, AnalysisResult> = {};
+  private _lastTimestamp: number = NaN;
 
   constructor(public readonly socket: WebSocket, private token: string, private provider: SpotifyProvider) {
     super();
@@ -197,8 +274,34 @@ export class SpotifyClient extends EventEmitter {
 
   async resolveURI(...uri: string[]) {
     return Object.entries(await this.resolve(...uri.map(uri => uri.split(':track:')[1]))).map(([key, value]) => (
-        [`spotify:track:${key}`, value] as [string, SpotifyTrack]
+      [`spotify:track:${key}`, value] as [string, SpotifyTrack]
     )).reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {} as ReturnType<this['resolve']>);
+  }
+
+  /**
+   * Returns a Spotify analysis for a given track
+   * @param trackID track to analyze
+   */
+  async analyze(trackID: string, token = process.env.ANALYSIS_TOKEN || this.token): Promise<AnalysisResult> {
+    if (this._analysisCache[trackID]) return this._analysisCache[trackID];
+
+    try {
+      const { body } = await got.get(SPOTIFY_AUDIO_ANALYSIS(trackID), {
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...SPOTIFY_HEADERS
+        },
+        responseType: 'json'
+      }) as { body: AnalysisResult };
+
+      return this._analysisCache[trackID] = body;
+    } catch (e) {
+      if (e instanceof HTTPError) {
+        console.log(e.response.body);
+      }
+
+      return null!;
+    }
   }
 
   /**
@@ -235,6 +338,19 @@ export class SpotifyClient extends EventEmitter {
     return this._playerState;
   }
 
+  /**
+   * Current position in the song
+   */
+  get position(): number {
+    if (this._isPaused) return +(this._lastPosition || NaN);
+    const effective = this._lastTimestamp;
+    const base = +(this._lastPosition || NaN);
+
+    const diff = Date.now() - effective;
+
+    return base + diff;
+  }
+
   set playerState(playerState) {
     this._playerState = playerState;
     this._diffPlayerState();
@@ -244,16 +360,25 @@ export class SpotifyClient extends EventEmitter {
     const playerState = this._playerState;
     const events: Array<[string, ...any[]]> = [];
 
+    this._lastTimestamp = +playerState.timestamp;
+
     // if track UID did change, emit the change
     if (playerState.track) {
       if (playerState.track.uri !== this._lastTrackURI) {
         this._lastTrackURI = playerState.track.uri;
-        await this.resolveURI(playerState.track.uri).then(({[playerState.track.uri]: track}) => {
+        events.push(["trackID", playerState.track.uri.split(":")[2]]);
+
+        this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
           this._lastTrack = track;
-          events.push(["track", track]);
+          this.emit("track", track);
         });
       }
     }
+
+    const isEmpty = (!this._activeDeviceID || playerState.playback_speed === 0);
+
+    playerState.is_playing = isEmpty ? false : playerState.is_playing;
+    playerState.is_paused = isEmpty ? true : playerState.is_paused;
 
     // if playing state did change, emit the change
     if (playerState.is_playing !== this._isPlaying) {
@@ -343,7 +468,7 @@ export class SpotifyClient extends EventEmitter {
    * Update internal values according to a state change payload
    * @param param0 payload
    */
-  private handleStateChange({ cluster: { active_device_id, player_state, devices }, devices_that_changed }: StateChangePayload) {
+  private handleStateChange({ active_device_id, player_state, devices }: StateChangePayload["cluster"]) {
     this.devices = devices;
     this.activeDeviceID = active_device_id;
     this.playerState = player_state;
@@ -373,7 +498,7 @@ export class SpotifyClient extends EventEmitter {
         }
         payload.payloads.forEach(payload => {
           if ('update_reason' in payload && payload['update_reason'] === 'DEVICE_STATE_CHANGED') {
-            this.handleStateChange(payload);
+            this.handleStateChange(payload.cluster);
           }
         });
       }
@@ -440,12 +565,12 @@ export class SpotifyClient extends EventEmitter {
         authorization: `Bearer ${this.token}`,
         ...SPOTIFY_HEADERS
       },
-      body: JSON.stringify({ "device": { "brand": "spotify", "capabilities": { "change_volume": true, "audio_podcasts": true, "enable_play_token": true, "play_token_lost_behavior": "pause", "disable_connect": false, "video_playback": true, "manifest_formats": ["file_urls_mp3", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_ids_video"] }, "device_id": this._deviceID = makeid(40), "device_type": "computer", "metadata": {}, "model": "web_player", "name": "Web Player (Chrome)", "platform_identifier": "web_player osx 10.15.4;chrome 80.0.3987.163;desktop" }, "connection_id": connectionID, "client_version": "harmony:4.0.0-4f6c892", "volume": 65535 })
+      body: JSON.stringify({ "device": { "brand": "spotify", "capabilities": { "change_volume": true, "audio_podcasts": true, "enable_play_token": true, "play_token_lost_behavior": "pause", "disable_connect": false, "video_playback": true, "manifest_formats": ["file_urls_mp3", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_ids_video"] }, "device_id": this._deviceID = makeid(40), "device_type": "computer", "metadata": {}, "model": "web_player", "name": "Web Player (Chrome)", "platform_identifier": "web_player osx 10.15.4;chrome 80.0.3987.163;desktop" }, "connection_id": connectionID, "client_version": "harmony:4.9.0-d242618", "volume": 65535 })
     });
   }
 
-  private connectState(connectionID: string) {
-    return got.put(SPOTIFY_CONNECT_STATE(this._deviceID), {
+  private async connectState(connectionID: string) {
+    const { body } = await got.put(SPOTIFY_CONNECT_STATE(this._deviceID), {
       headers: {
         authorization: `Bearer ${this.token}`,
         ...SPOTIFY_HEADERS,
@@ -461,8 +586,11 @@ export class SpotifyClient extends EventEmitter {
             }
           }
         }
-      })
+      }),
+      responseType: "json"
     });
+
+    this.handleStateChange(body as StateChangePayload["cluster"]);
   }
 }
 

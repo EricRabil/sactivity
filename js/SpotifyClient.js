@@ -1,12 +1,40 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.SpotifyClient = exports.AnalysisTimeInterval = void 0;
 const events_1 = require("events");
-const source_1 = __importDefault(require("got/dist/source"));
+const source_1 = __importStar(require("got/dist/source"));
 const const_1 = require("./const");
 const util_1 = require("./util");
+var AnalysisTimeInterval;
+(function (AnalysisTimeInterval) {
+    function isInterval(obj) {
+        return typeof obj === "object"
+            && obj !== null
+            && typeof obj.start === "number"
+            && typeof obj.duration === "number"
+            && typeof obj.confidence === "number";
+    }
+    AnalysisTimeInterval.isInterval = isInterval;
+})(AnalysisTimeInterval = exports.AnalysisTimeInterval || (exports.AnalysisTimeInterval = {}));
 function isSpotifyPayload(payload) {
     return 'type' in payload;
 }
@@ -28,6 +56,8 @@ class SpotifyClient extends events_1.EventEmitter {
         this._devices = {};
         this._activeDeviceID = null;
         this._trackCache = {};
+        this._analysisCache = {};
+        this._lastTimestamp = NaN;
         this._deviceID = util_1.makeid(40);
         socket.onmessage = this.processRawMessage.bind(this);
         socket.onclose = this.emit.bind(this, "close");
@@ -74,6 +104,30 @@ class SpotifyClient extends events_1.EventEmitter {
         return Object.entries(await this.resolve(...uri.map(uri => uri.split(':track:')[1]))).map(([key, value]) => [`spotify:track:${key}`, value]).reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
     }
     /**
+     * Returns a Spotify analysis for a given track
+     * @param trackID track to analyze
+     */
+    async analyze(trackID, token = process.env.ANALYSIS_TOKEN || this.token) {
+        if (this._analysisCache[trackID])
+            return this._analysisCache[trackID];
+        try {
+            const { body } = await source_1.default.get(const_1.SPOTIFY_AUDIO_ANALYSIS(trackID), {
+                headers: {
+                    authorization: `Bearer ${token}`,
+                    ...const_1.SPOTIFY_HEADERS
+                },
+                responseType: 'json'
+            });
+            return this._analysisCache[trackID] = body;
+        }
+        catch (e) {
+            if (e instanceof source_1.HTTPError) {
+                console.log(e.response.body);
+            }
+            return null;
+        }
+    }
+    /**
      * Spotify Devices
      */
     get devices() {
@@ -101,6 +155,17 @@ class SpotifyClient extends events_1.EventEmitter {
     get playerState() {
         return this._playerState;
     }
+    /**
+     * Current position in the song
+     */
+    get position() {
+        if (this._isPaused)
+            return +(this._lastPosition || NaN);
+        const effective = this._lastTimestamp;
+        const base = +(this._lastPosition || NaN);
+        const diff = Date.now() - effective;
+        return base + diff;
+    }
     set playerState(playerState) {
         this._playerState = playerState;
         this._diffPlayerState();
@@ -108,16 +173,21 @@ class SpotifyClient extends events_1.EventEmitter {
     async _diffPlayerState() {
         const playerState = this._playerState;
         const events = [];
+        this._lastTimestamp = +playerState.timestamp;
         // if track UID did change, emit the change
         if (playerState.track) {
             if (playerState.track.uri !== this._lastTrackURI) {
                 this._lastTrackURI = playerState.track.uri;
-                await this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
+                events.push(["trackID", playerState.track.uri.split(":")[2]]);
+                this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
                     this._lastTrack = track;
-                    events.push(["track", track]);
+                    this.emit("track", track);
                 });
             }
         }
+        const isEmpty = (!this._activeDeviceID || playerState.playback_speed === 0);
+        playerState.is_playing = isEmpty ? false : playerState.is_playing;
+        playerState.is_paused = isEmpty ? true : playerState.is_paused;
         // if playing state did change, emit the change
         if (playerState.is_playing !== this._isPlaying) {
             this._isPlaying = playerState.is_playing;
@@ -193,7 +263,7 @@ class SpotifyClient extends events_1.EventEmitter {
      * Update internal values according to a state change payload
      * @param param0 payload
      */
-    handleStateChange({ cluster: { active_device_id, player_state, devices }, devices_that_changed }) {
+    handleStateChange({ active_device_id, player_state, devices }) {
         this.devices = devices;
         this.activeDeviceID = active_device_id;
         this.playerState = player_state;
@@ -221,7 +291,7 @@ class SpotifyClient extends events_1.EventEmitter {
                 }
                 payload.payloads.forEach(payload => {
                     if ('update_reason' in payload && payload['update_reason'] === 'DEVICE_STATE_CHANGED') {
-                        this.handleStateChange(payload);
+                        this.handleStateChange(payload.cluster);
                     }
                 });
             }
@@ -282,11 +352,11 @@ class SpotifyClient extends events_1.EventEmitter {
                 authorization: `Bearer ${this.token}`,
                 ...const_1.SPOTIFY_HEADERS
             },
-            body: JSON.stringify({ "device": { "brand": "spotify", "capabilities": { "change_volume": true, "audio_podcasts": true, "enable_play_token": true, "play_token_lost_behavior": "pause", "disable_connect": false, "video_playback": true, "manifest_formats": ["file_urls_mp3", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_ids_video"] }, "device_id": this._deviceID = util_1.makeid(40), "device_type": "computer", "metadata": {}, "model": "web_player", "name": "Web Player (Chrome)", "platform_identifier": "web_player osx 10.15.4;chrome 80.0.3987.163;desktop" }, "connection_id": connectionID, "client_version": "harmony:4.0.0-4f6c892", "volume": 65535 })
+            body: JSON.stringify({ "device": { "brand": "spotify", "capabilities": { "change_volume": true, "audio_podcasts": true, "enable_play_token": true, "play_token_lost_behavior": "pause", "disable_connect": false, "video_playback": true, "manifest_formats": ["file_urls_mp3", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_ids_video"] }, "device_id": this._deviceID = util_1.makeid(40), "device_type": "computer", "metadata": {}, "model": "web_player", "name": "Web Player (Chrome)", "platform_identifier": "web_player osx 10.15.4;chrome 80.0.3987.163;desktop" }, "connection_id": connectionID, "client_version": "harmony:4.9.0-d242618", "volume": 65535 })
         });
     }
-    connectState(connectionID) {
-        return source_1.default.put(const_1.SPOTIFY_CONNECT_STATE(this._deviceID), {
+    async connectState(connectionID) {
+        const { body } = await source_1.default.put(const_1.SPOTIFY_CONNECT_STATE(this._deviceID), {
             headers: {
                 authorization: `Bearer ${this.token}`,
                 ...const_1.SPOTIFY_HEADERS,
@@ -302,8 +372,10 @@ class SpotifyClient extends events_1.EventEmitter {
                         }
                     }
                 }
-            })
+            }),
+            responseType: "json"
         });
+        this.handleStateChange(body);
     }
 }
 exports.SpotifyClient = SpotifyClient;

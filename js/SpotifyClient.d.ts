@@ -93,6 +93,68 @@ interface PlaybackOptions {
     repeating_context: boolean;
     repeating_track: boolean;
 }
+export interface AnalysisTimeInterval {
+    start: number;
+    duration: number;
+    confidence: number;
+}
+export declare namespace AnalysisTimeInterval {
+    function isInterval(obj: unknown): obj is AnalysisTimeInterval;
+}
+export interface AnalysisSection extends AnalysisTimeInterval {
+    loudness: number;
+    tempo: number;
+    tempo_confidence: number;
+    key: number;
+    key_confidence: number;
+    mode: number;
+    mode_confidence: number;
+    time_signature: number;
+    time_signature_confidence: number;
+}
+export interface AnalysisSegment extends AnalysisTimeInterval {
+    loudness_start: number;
+    loudness_max_time: number;
+    loudness_max: number;
+    loudness_end: number;
+    pitches: number[];
+    timbre: number[];
+}
+export interface AnalysisTrack {
+    duration: number;
+    sample_md5: string;
+    offset_seconds: number;
+    window_seconds: number;
+    analysis_sample_rate: number;
+    analysis_channels: number;
+    end_of_fade_in: number;
+    start_of_fade_out: number;
+    loudness: number;
+    tempo: number;
+    tempo_confidence: number;
+    time_signature: number;
+    time_signature_confidence: number;
+    key: number;
+    key_confidence: number;
+    mode: number;
+    mode_confidence: number;
+    codestring: string;
+    code_version: number;
+    echoprintstring: string;
+    echoprint_version: number;
+    synchstring: string;
+    synch_version: number;
+    rhyhtmstring: string;
+    rhyhtm_version: number;
+}
+export interface AnalysisResult {
+    bars: AnalysisTimeInterval[];
+    beats: AnalysisTimeInterval[];
+    sections: AnalysisSection[];
+    segments: AnalysisSegment[];
+    tatums: AnalysisTimeInterval[];
+    track: AnalysisTrack;
+}
 export declare interface SpotifyClient {
     on(event: 'volume', listener: (vol: number) => any): this;
     on(event: 'playing', listener: () => any): this;
@@ -100,6 +162,7 @@ export declare interface SpotifyClient {
     on(event: 'paused', listener: () => any): this;
     on(event: 'resumed', listener: () => any): this;
     on(event: 'track', listener: (track: SpotifyTrack) => any): this;
+    on(event: 'trackID', listener: (trackID: string) => any): this;
     on(event: 'options', listener: (opts: PlaybackOptions) => any): this;
     on(event: 'position', listener: (pos: string) => any): this;
     on(event: 'device', listener: (device: SpotifyDevice) => any): this;
@@ -121,6 +184,8 @@ export declare class SpotifyClient extends EventEmitter {
     private _devices;
     private _activeDeviceID;
     private _trackCache;
+    _analysisCache: Record<string, AnalysisResult>;
+    private _lastTimestamp;
     constructor(socket: WebSocket, token: string, provider: SpotifyProvider);
     /**
      * Ping Spotify in 30 seconds
@@ -140,6 +205,11 @@ export declare class SpotifyClient extends EventEmitter {
     resolve(...ids: string[]): Promise<Record<string, SpotifyTrack>>;
     resolveURI(...uri: string[]): Promise<Record<string, SpotifyTrack>>;
     /**
+     * Returns a Spotify analysis for a given track
+     * @param trackID track to analyze
+     */
+    analyze(trackID: string, token?: string): Promise<AnalysisResult>;
+    /**
      * Spotify Devices
      */
     get devices(): Record<string, SpotifyDevice>;
@@ -153,6 +223,10 @@ export declare class SpotifyClient extends EventEmitter {
      * The latest PlayerState
      */
     get playerState(): PlayerState;
+    /**
+     * Current position in the song
+     */
+    get position(): number;
     set playerState(playerState: PlayerState);
     private _diffPlayerState;
     /**

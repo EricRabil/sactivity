@@ -5,6 +5,7 @@ export declare const SPOTIFY_TRACK = "https://guc-spclient.spotify.com/track-pla
 export declare const SPOTIFY_CONNECT_STATE: (clientID: string) => string;
 export declare const SPOTIFY_STREAM: (endpoint: string, token: string) => string;
 export declare const SPOTIFY_TRACK_DATA: (tracks: string[]) => string;
+export declare const SPOTIFY_AUDIO_ANALYSIS: (trackID: string) => string;
 export declare const SPOTIFY_HEADERS: {
     'user-agent': string;
     'sec-fetch-site': string;

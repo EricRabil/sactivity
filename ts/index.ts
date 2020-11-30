@@ -73,4 +73,5 @@ export default class Sactivity implements SpotifyProvider {
   }
 }
 
-export { SpotifyClient } from "./SpotifyClient";
+export * from "./SpotifyClient";
+export * from "./SpotifyTrackAnalyzer";

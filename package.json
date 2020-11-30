@@ -1,6 +1,6 @@
 {
   "name": "sactivity",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Spotify WebSocket Activity API Library",
   "main": "js/index.js",
   "scripts": {
