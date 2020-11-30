@@ -1,8 +1,9 @@
 {
   "name": "sactivity",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Spotify WebSocket Activity API Library",
   "main": "js/index.js",
+  "types": "js/index.d.ts",
   "scripts": {
     "test": "SPOTIFY_DEBUG=1 node test/index.js"
   },
