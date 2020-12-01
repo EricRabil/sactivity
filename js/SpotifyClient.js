@@ -122,6 +122,15 @@ class SpotifyClient extends events_1.EventEmitter {
         }
         catch (e) {
             if (e instanceof source_1.HTTPError) {
+                if (typeof e.response.body === "object" && e.response.body !== null && "error" in e.response.body) {
+                    const body = e.response.body;
+                    if (body.error.status === 401 && body.error.message === "The access token expired") {
+                        const token = await this.createAnalysisToken();
+                        if (!token)
+                            return null;
+                        return this.analyze(trackID, this.token = token);
+                    }
+                }
                 console.log(e.response.body);
             }
             return null;
@@ -332,6 +341,43 @@ class SpotifyClient extends events_1.EventEmitter {
                 break;
             }
         }
+    }
+    async createAnalysisToken() {
+        const headers = {
+            accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            "accept-encoding": "gzip, deflate, br",
+            "accept-language": "en",
+            "cache-control": "max-age=0",
+            cookie: this.provider.cookies,
+            "referer": "https://developer.spotify.com/callback/",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.67 Safari/537.36"
+        };
+        const page = await source_1.default.get(const_1.SPOTIFY_ANALYSIS_PAGE, {
+            headers
+        });
+        const bits = /&client_id=(.*)`/g.exec(page.body);
+        if (!bits)
+            return null;
+        const [, clientID] = bits;
+        const result = await source_1.default.get(const_1.SPOTIFY_ANALYSIS_TOKEN(clientID), {
+            headers: {
+                ...headers,
+                referer: "https://developer.spotify.com/"
+            },
+            followRedirect: false
+        });
+        const location = result.headers.location;
+        if (!location)
+            return null;
+        const tokenBits = /access_token=(.*)&token_/g.exec(location);
+        if (!tokenBits)
+            return null;
+        return tokenBits[1] || null;
     }
     subscribe(connectionID) {
         return source_1.default.put(const_1.SPOTIFY_SUBSCRIBE(connectionID), {

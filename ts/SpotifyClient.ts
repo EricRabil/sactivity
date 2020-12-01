@@ -1,10 +1,10 @@
 import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
 import got, { HTTPError } from "got/dist/source";
-import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA, SPOTIFY_AUDIO_ANALYSIS } from "./const";
+import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA, SPOTIFY_AUDIO_ANALYSIS, SPOTIFY_ANALYSIS_PAGE, SPOTIFY_ANALYSIS_TOKEN } from "./const";
 import { makeid } from "./util";
 import { SpotifyTrack } from "./types";
-import { SpotifyProvider } from ".";
+import Sactivity, { SpotifyProvider } from ".";
 
 type SpotifyPayloadType = "ping" | "pong" | "message";
 
@@ -223,7 +223,7 @@ export class SpotifyClient extends EventEmitter {
   public _analysisCache: Record<string, AnalysisResult> = {};
   private _lastTimestamp: number = NaN;
 
-  constructor(public readonly socket: WebSocket, private token: string, private provider: SpotifyProvider) {
+  constructor(public readonly socket: WebSocket, private token: string, private provider: Sactivity) {
     super();
     socket.onmessage = this.processRawMessage.bind(this);
     socket.onclose = this.emit.bind(this, "close");
@@ -297,6 +297,16 @@ export class SpotifyClient extends EventEmitter {
       return this._analysisCache[trackID] = body;
     } catch (e) {
       if (e instanceof HTTPError) {
+        if (typeof e.response.body === "object" && e.response.body !== null && "error" in e.response.body) {
+          const body = (e.response.body as { error: { status?: number, message?: string } });
+
+          if (body.error.status === 401 && body.error.message === "The access token expired") {
+            const token = await this.createAnalysisToken();
+            if (!token) return null!;
+
+            return this.analyze(trackID, this.token = token);
+          }
+        }
         console.log(e.response.body);
       }
 
@@ -541,6 +551,48 @@ export class SpotifyClient extends EventEmitter {
         break;
       }
     }
+  }
+
+  public async createAnalysisToken(): Promise<string | null> {
+    const headers = {
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+      "accept-encoding": "gzip, deflate, br",
+      "accept-language": "en",
+      "cache-control": "max-age=0",
+      cookie: this.provider.cookies,
+      "referer": "https://developer.spotify.com/callback/",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-user": "?1",
+      "upgrade-insecure-requests": "1",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.67 Safari/537.36"
+    }
+
+    const page = await got.get(SPOTIFY_ANALYSIS_PAGE, {
+      headers
+    });
+
+    const bits = /&client_id=(.*)`/g.exec(page.body);
+    if (!bits) return null;
+
+    const [ , clientID ] = bits;
+
+    const result = await got.get(SPOTIFY_ANALYSIS_TOKEN(clientID), {
+      headers: {
+        ...headers,
+        referer: "https://developer.spotify.com/"
+      },
+      followRedirect: false
+    });
+
+    const location = result.headers.location;
+    if (!location) return null;
+
+    const tokenBits = /access_token=(.*)&token_/g.exec(location);
+    if (!tokenBits) return null;
+
+    return tokenBits[1] || null;
   }
 
   private subscribe(connectionID: string) {

@@ -12,3 +12,5 @@ export declare const SPOTIFY_HEADERS: {
     'sec-fetch-mode': string;
     'sec-fetch-dest': string;
 };
+export declare const SPOTIFY_ANALYSIS_TOKEN: (clientID: string) => string;
+export declare const SPOTIFY_ANALYSIS_PAGE = "https://developer.spotify.com/console/get-audio-analysis-track/";

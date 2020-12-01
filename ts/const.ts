@@ -12,3 +12,5 @@ export const SPOTIFY_HEADERS = {
   'sec-fetch-mode': 'cors',
   'sec-fetch-dest': 'empty'
 };
+export const SPOTIFY_ANALYSIS_TOKEN = (clientID: string) => `https://accounts.spotify.com/authorize?response_type=token&redirect_uri=https%3A%2F%2Fdeveloper.spotify.com%2Fcallback&client_id=${clientID}&state=${Math.random().toString(36).substring(7)}`;
+export const SPOTIFY_ANALYSIS_PAGE = `https://developer.spotify.com/console/get-audio-analysis-track/`;
