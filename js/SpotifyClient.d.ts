@@ -1,160 +1,8 @@
 /// <reference types="node" />
 import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
-import { SpotifyTrack } from "./types";
+import { AnalysisResult, AsyncAnalysisCache, PlaybackOptions, PlayerState, SpotifyDevice, SpotifyPayload, SpotifyTrack } from "./types";
 import Sactivity from ".";
-declare type SpotifyPayloadType = "ping" | "pong" | "message";
-interface SpotifyPayload {
-    type: SpotifyPayloadType;
-    uri?: string;
-    headers?: Record<string, string>;
-    payloads?: any[];
-}
-interface SpotifyDevice {
-    can_play: boolean;
-    volume: number;
-    name: string;
-    capabilities: {
-        can_be_player: boolean;
-        gaia_eq_connect_id: boolean;
-        supports_logout: boolean;
-        is_observable: boolean;
-        volume_steps: number;
-        supported_types: string[];
-        command_acks: boolean;
-        supports_playlist_v2: boolean;
-        is_controllable: boolean;
-        supports_external_episodes: boolean;
-        supports_command_request: boolean;
-    };
-    metadata: Array<{
-        type: string;
-        metadata: string;
-    }>;
-    device_software_version: string;
-    device_type: string;
-    spirc_version: string;
-    device_id: string;
-    client_id: string;
-    brand: string;
-    model: string;
-}
-interface SpotifyShallowTrack {
-    uri: string;
-    uid: string;
-    provider: string;
-    metadata: {
-        context_uri: string;
-        entity_uri: string;
-        iteration: string;
-        track_player: string;
-    };
-}
-interface PlayerState {
-    timestamp: string;
-    context_uri: string;
-    context_url: string;
-    context_restrictions: any;
-    play_origin: {
-        feature_identifier: string;
-        feature_version: string;
-        view_uri: string;
-        referrer_identifier: string;
-    };
-    index: {
-        page: number;
-        track: number;
-    };
-    track: SpotifyShallowTrack;
-    playback_id: string;
-    playback_speed: number;
-    position_as_of_timestamp: string;
-    duration: string;
-    is_playing: boolean;
-    is_paused: boolean;
-    is_system_initiated: boolean;
-    options: PlaybackOptions;
-    restrictions: Record<string, string[]>;
-    suppressions: Record<string, string[]>;
-    prev_tracks: SpotifyShallowTrack[];
-    next_tracks: SpotifyShallowTrack[];
-    context_metdata: {
-        ['zelda.context_uri']: string;
-        context_owner: string;
-        context_description: string;
-        image_url: string;
-    };
-    page_metadata: any;
-    session_id: string;
-    queue_revision: string;
-}
-interface PlaybackOptions {
-    shuffling_context: boolean;
-    repeating_context: boolean;
-    repeating_track: boolean;
-}
-export interface AnalysisTimeInterval {
-    start: number;
-    duration: number;
-    confidence: number;
-}
-export declare namespace AnalysisTimeInterval {
-    function isInterval(obj: unknown): obj is AnalysisTimeInterval;
-}
-export interface AnalysisSection extends AnalysisTimeInterval {
-    loudness: number;
-    tempo: number;
-    tempo_confidence: number;
-    key: number;
-    key_confidence: number;
-    mode: number;
-    mode_confidence: number;
-    time_signature: number;
-    time_signature_confidence: number;
-}
-export interface AnalysisSegment extends AnalysisTimeInterval {
-    loudness_start: number;
-    loudness_max_time: number;
-    loudness_max: number;
-    loudness_end: number;
-    pitches: number[];
-    timbre: number[];
-}
-export interface AnalysisTrack {
-    duration: number;
-    sample_md5: string;
-    offset_seconds: number;
-    window_seconds: number;
-    analysis_sample_rate: number;
-    analysis_channels: number;
-    end_of_fade_in: number;
-    start_of_fade_out: number;
-    loudness: number;
-    tempo: number;
-    tempo_confidence: number;
-    time_signature: number;
-    time_signature_confidence: number;
-    key: number;
-    key_confidence: number;
-    mode: number;
-    mode_confidence: number;
-    codestring: string;
-    code_version: number;
-    echoprintstring: string;
-    echoprint_version: number;
-    synchstring: string;
-    synch_version: number;
-    rhyhtmstring: string;
-    rhyhtm_version: number;
-}
-export interface AnalysisResult {
-    bars: AnalysisTimeInterval[];
-    beats: AnalysisTimeInterval[];
-    sections: AnalysisSection[];
-    segments: AnalysisSegment[];
-    tatums: AnalysisTimeInterval[];
-    track: AnalysisTrack;
-}
 export declare interface SpotifyClient {
     on(event: 'volume', listener: (vol: number) => any): this;
     on(event: 'playing', listener: () => any): this;
@@ -186,6 +34,7 @@ export declare class SpotifyClient extends EventEmitter {
     private _trackCache;
     _analysisCache: Record<string, AnalysisResult>;
     private _lastTimestamp;
+    asyncCache?: AsyncAnalysisCache;
     constructor(socket: WebSocket, token: string, provider: Sactivity);
     /**
      * Ping Spotify in 30 seconds
@@ -204,6 +53,7 @@ export declare class SpotifyClient extends EventEmitter {
     deviceName(id: string): string;
     resolve(...ids: string[]): Promise<Record<string, SpotifyTrack>>;
     resolveURI(...uri: string[]): Promise<Record<string, SpotifyTrack>>;
+    analyzeIfNeeded(trackIDs: string[], token?: string): Promise<void>;
     /**
      * Returns a Spotify analysis for a given track
      * @param trackID track to analyze
@@ -217,7 +67,7 @@ export declare class SpotifyClient extends EventEmitter {
      * The current track
      */
     get track(): SpotifyTrack;
-    get shallowTrack(): SpotifyShallowTrack;
+    get shallowTrack(): import("./types").SpotifyShallowTrack;
     set devices(devices: Record<string, SpotifyDevice>);
     /**
      * The latest PlayerState

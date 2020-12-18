@@ -19,22 +19,11 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SpotifyClient = exports.AnalysisTimeInterval = void 0;
+exports.SpotifyClient = void 0;
 const events_1 = require("events");
 const source_1 = __importStar(require("got/dist/source"));
 const const_1 = require("./const");
 const util_1 = require("./util");
-var AnalysisTimeInterval;
-(function (AnalysisTimeInterval) {
-    function isInterval(obj) {
-        return typeof obj === "object"
-            && obj !== null
-            && typeof obj.start === "number"
-            && typeof obj.duration === "number"
-            && typeof obj.confidence === "number";
-    }
-    AnalysisTimeInterval.isInterval = isInterval;
-})(AnalysisTimeInterval = exports.AnalysisTimeInterval || (exports.AnalysisTimeInterval = {}));
 function isSpotifyPayload(payload) {
     return 'type' in payload;
 }
@@ -103,12 +92,24 @@ class SpotifyClient extends events_1.EventEmitter {
     async resolveURI(...uri) {
         return Object.entries(await this.resolve(...uri.map(uri => uri.split(':track:')[1]))).map(([key, value]) => [`spotify:track:${key}`, value]).reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});
     }
+    async analyzeIfNeeded(trackIDs, token) {
+        if (this.asyncCache) {
+            const cached = await this.asyncCache.resolveMany(trackIDs);
+            trackIDs = trackIDs.filter(id => !cached[id]);
+        }
+        await Promise.all(trackIDs.map(id => this.analyze(id, token)));
+    }
     /**
      * Returns a Spotify analysis for a given track
      * @param trackID track to analyze
      */
     async analyze(trackID, token = process.env.ANALYSIS_TOKEN || this.token) {
-        if (this._analysisCache[trackID])
+        if (this.asyncCache) {
+            const result = await this.asyncCache.resolve(trackID);
+            if (result)
+                return result;
+        }
+        else if (this._analysisCache[trackID])
             return this._analysisCache[trackID];
         try {
             const { body } = await source_1.default.get(const_1.SPOTIFY_AUDIO_ANALYSIS(trackID), {
@@ -118,7 +119,9 @@ class SpotifyClient extends events_1.EventEmitter {
                 },
                 responseType: 'json'
             });
-            return this._analysisCache[trackID] = body;
+            if (this.asyncCache)
+                await this.asyncCache.store(trackID, body);
+            return body;
         }
         catch (e) {
             if (e instanceof source_1.HTTPError) {

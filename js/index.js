@@ -77,3 +77,4 @@ class Sactivity {
 exports.default = Sactivity;
 __exportStar(require("./SpotifyClient"), exports);
 __exportStar(require("./SpotifyTrackAnalyzer"), exports);
+__exportStar(require("./types"), exports);

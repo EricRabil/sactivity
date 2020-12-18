@@ -1,5 +1,6 @@
 /// <reference types="node" />
-import SpotifyClient, { AnalysisResult, AnalysisSection, AnalysisSegment, AnalysisTimeInterval } from "./SpotifyClient";
+import SpotifyClient from "./SpotifyClient";
+import { AnalysisResult, AnalysisSection, AnalysisSegment, AnalysisTimeInterval } from "./types";
 import { EventEmitter } from "events";
 export declare interface SpotifyTrackAnalyzer {
     on(event: 'tatum', listener: (tatum: AnalysisTimeInterval) => any): this;

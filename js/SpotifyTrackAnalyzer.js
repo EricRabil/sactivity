@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SpotifyTrackAnalyzer = void 0;
-const SpotifyClient_1 = require("./SpotifyClient");
+const types_1 = require("./types");
 const events_1 = require("events");
 class SpotifyTrackAnalyzer extends events_1.EventEmitter {
     constructor(client, token) {
@@ -42,11 +42,7 @@ class SpotifyTrackAnalyzer extends events_1.EventEmitter {
     async lookahead() {
         this.lookaheadIndex += 1;
         const current = this.lookaheadIndex;
-        for (let track of this.client.playerState.next_tracks.slice(0, 5)) {
-            if (this.lookaheadIndex !== current)
-                return;
-            await this.client.analyze(track.uri.split(":")[2], this.token);
-        }
+        await this.client.analyzeIfNeeded(this.client.playerState.next_tracks.filter(({ uri }) => uri !== "spotify:delimiter").slice(0, 5).map(({ uri }) => uri.split(":")[2]), this.token);
     }
     update() {
         if (this.updateTimer) {
@@ -83,7 +79,7 @@ class SpotifyTrackAnalyzer extends events_1.EventEmitter {
         if (this.pending[key])
             this.pending[key] = clearTimeout(this.pending[key]);
         const { [key]: interval } = this;
-        if (!interval || !SpotifyClient_1.AnalysisTimeInterval.isInterval(interval)) {
+        if (!interval || !types_1.AnalysisTimeInterval.isInterval(interval)) {
             this.defer(key);
             return;
         }

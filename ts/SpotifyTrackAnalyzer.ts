@@ -1,4 +1,5 @@
-import SpotifyClient, { AnalysisResult, AnalysisSection, AnalysisSegment, AnalysisTimeInterval } from "./SpotifyClient";
+import SpotifyClient from "./SpotifyClient";
+import { AnalysisResult, AnalysisSection, AnalysisSegment, AnalysisTimeInterval } from "./types";
 import { EventEmitter } from "events";
 
 export declare interface SpotifyTrackAnalyzer {
@@ -53,11 +54,8 @@ export class SpotifyTrackAnalyzer extends EventEmitter {
     private async lookahead() {
         this.lookaheadIndex += 1;
         const current = this.lookaheadIndex;
-
-        for (let track of this.client.playerState.next_tracks.slice(0, 5)) {
-            if (this.lookaheadIndex !== current) return;
-            await this.client.analyze(track.uri.split(":")[2], this.token);
-        }
+        
+        await this.client.analyzeIfNeeded(this.client.playerState.next_tracks.filter(({ uri }) => uri !== "spotify:delimiter").slice(0, 5).map(({ uri }) => uri.split(":")[2]), this.token);
     }
 
     updateTimer: NodeJS.Timeout | null = null;
