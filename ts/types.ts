@@ -114,8 +114,12 @@ export interface AnalysisTimeInterval {
 
 export interface AsyncAnalysisCache {
   resolve(id: string): Promise<AnalysisResult | undefined | null | void>;
+  resolveMetadata(id: string): Promise<SpotifyTrack | undefined | null | void>;
   resolveMany(id: string[]): Promise<Record<string, AnalysisResult>>;
+  resolveManyMetadatas(id: string[]): Promise<Record<string, SpotifyTrack>>;
   store(id: string, result: AnalysisResult): Promise<void>;
+  storeMetadata(id: string, result: SpotifyTrack): Promise<void>;
+  storeManyMetadatas(metadatas: Record<string, SpotifyTrack>): Promise<void>;
 }
 
 export namespace AnalysisTimeInterval {

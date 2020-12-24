@@ -47,6 +47,12 @@ export class SpotifyClient extends EventEmitter {
     super();
     socket.onmessage = this.processRawMessage.bind(this);
     socket.onclose = this.emit.bind(this, "close");
+
+    this.on("track", () => {
+      const ids = this._playerState.next_tracks.map(track => spotifyTrackID(track.uri)).filter(id => id !== null).slice(0, 50) as string[];
+
+      this.resolve(...ids);
+    });
   }
 
   /**
@@ -221,10 +227,9 @@ export class SpotifyClient extends EventEmitter {
         this._lastTrackURI = playerState.track.uri;
         events.push(["trackID", playerState.track.uri.split(":")[2]]);
 
-        this.resolveURI(playerState.track.uri).then(({ [playerState.track.uri]: track }) => {
-          this._lastTrack = track;
-          this.emit("track", track);
-        });
+        const { [playerState.track.uri]: track } = await this.resolveURI(playerState.track.uri);
+        this._lastTrack = track;
+        events.push(["track", track]);
       }
     }
 
@@ -297,6 +302,11 @@ export class SpotifyClient extends EventEmitter {
     }
 
     if (ids.length === 0) return Promise.resolve({});
+
+    const existing = this.asyncCache ? await this.asyncCache.resolveManyMetadatas(ids) : {};
+
+    ids = ids.filter(id => !existing[id]);
+
     const run = async () => {
       const { body } = await got.get(SPOTIFY_TRACK_DATA(ids), {
         headers: {
@@ -308,13 +318,26 @@ export class SpotifyClient extends EventEmitter {
       return body;
     }
 
-    const body = await run().catch(e => this.provider.generateAccessToken().then(token => this.token = token).then(() => run()));
+    const body = ids.length ? await run().catch(e => this.provider.generateAccessToken().then(token => this.token = token).then(() => run())) : { tracks: [] };
 
     if ((typeof body !== "object") || !body) return {};
     if (!("tracks" in body)) return {};
 
     const { tracks } = body as TracksQueryResult;
-    return tracks.reduce((a, c) => ({ ...a, [c.id]: c }), {} as Record<string, SpotifyTrack>);
+    const loaded = tracks.reduce((a, c) => ({ ...a, [c.id]: c }), {} as Record<string, SpotifyTrack>);
+
+    if (Object.keys(loaded).length && this.asyncCache) {
+      for (const trackID in loaded) {
+        const track = loaded[trackID];
+        if (track.linked_from) {
+          loaded[track.linked_from.id] = track;
+        }
+      }
+
+      await this.asyncCache.storeManyMetadatas(loaded);
+    }
+
+    return Object.assign({}, existing, loaded);
   }
 
   /**
