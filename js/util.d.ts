@@ -14,3 +14,4 @@ export declare class SpotifyAPIError extends Error {
     constructor(url: string, body: any);
 }
 export declare function makeid(length: number): string;
+export declare function spotifyTrackID(raw: string): string | null;

@@ -85,9 +85,17 @@ class SpotifyClient extends events_1.EventEmitter {
     async resolve(...ids) {
         const pull = await this.fetchMetadata(...ids.filter(id => !this._trackCache[id]));
         if (Object.keys(pull).length > 0) {
-            Object.entries(pull).forEach(([key, value]) => this._trackCache[key] = value);
+            Object.entries(pull).forEach(([key, value]) => {
+                this._trackCache[key] = value;
+                if (value.linked_from && value.linked_from.uri) {
+                    const linkedURI = util_1.spotifyTrackID(value.linked_from.uri);
+                    console.log(linkedURI);
+                    if (linkedURI)
+                        this._trackCache[linkedURI] = value;
+                }
+            });
         }
-        return ids.map(id => this._trackCache[id]).reduce((acc, track) => ({ ...acc, [track.id]: track }), {});
+        return ids.map(id => [id, this._trackCache[id]]).reduce((acc, [id, track]) => ({ ...acc, [id]: track }), {});
     }
     async resolveURI(...uri) {
         return Object.entries(await this.resolve(...uri.map(uri => uri.split(':track:')[1]))).map(([key, value]) => [`spotify:track:${key}`, value]).reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {});

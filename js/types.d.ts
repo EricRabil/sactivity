@@ -201,6 +201,15 @@ export interface SpotifyTrack extends SpotifyEntity {
     duration_ms: number;
     explicit: boolean;
     external_ids: any;
+    linked_from: {
+        external_urls: {
+            spotify: string;
+        };
+        href: string;
+        id: string;
+        type: "track";
+        uri: string;
+    };
     is_local: boolean;
     is_playable: boolean;
     popularity: number;

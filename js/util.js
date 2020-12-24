@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.makeid = exports.SpotifyAPIError = exports.isSpotifyDiscoveryResponse = exports.isSpotifyTokenResponse = void 0;
+exports.spotifyTrackID = exports.makeid = exports.SpotifyAPIError = exports.isSpotifyDiscoveryResponse = exports.isSpotifyTokenResponse = void 0;
 function isSpotifyTokenResponse(data) {
     return 'clientId' in data && 'accessToken' in data && 'accessTokenExpirationTimestampMs' in data && 'isAnonymous' in data;
 }
@@ -25,3 +25,10 @@ function makeid(length) {
     return result;
 }
 exports.makeid = makeid;
+function spotifyTrackID(raw) {
+    if (raw === "spotify:delimiter")
+        return null;
+    else
+        return raw.split(":")[2] || null;
+}
+exports.spotifyTrackID = spotifyTrackID;

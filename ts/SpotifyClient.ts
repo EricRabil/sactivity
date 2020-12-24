@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { WebSocket } from "@clusterws/cws";
 import got, { HTTPError } from "got/dist/source";
 import { SPOTIFY_SUBSCRIBE, SPOTIFY_TRACK, SPOTIFY_HEADERS, SPOTIFY_CONNECT_STATE, SPOTIFY_TRACK_DATA, SPOTIFY_AUDIO_ANALYSIS, SPOTIFY_ANALYSIS_PAGE, SPOTIFY_ANALYSIS_TOKEN } from "./const";
-import { makeid } from "./util";
+import { makeid, spotifyTrackID } from "./util";
 import { AnalysisResult, AsyncAnalysisCache, PlaybackOptions, PlayerState, SpotifyDevice, SpotifyPayload, SpotifyTrack, StateChangePayload } from "./types";
 import Sactivity, { SpotifyProvider } from ".";
 
@@ -85,11 +85,19 @@ export class SpotifyClient extends EventEmitter {
 
   async resolve(...ids: string[]) {
     const pull = await this.fetchMetadata(...ids.filter(id => !this._trackCache[id]));
+
     if (Object.keys(pull).length > 0) {
-      Object.entries(pull).forEach(([key, value]) => this._trackCache[key] = value);
+      Object.entries(pull).forEach(([key, value]) => {
+        this._trackCache[key] = value;
+        if (value.linked_from && value.linked_from.uri) {
+          const linkedURI = spotifyTrackID(value.linked_from.uri);
+          console.log(linkedURI);
+          if (linkedURI) this._trackCache[linkedURI] = value;
+        }
+      });
     }
 
-    return ids.map(id => this._trackCache[id]).reduce((acc, track) => ({ ...acc, [track.id]: track }), {} as Record<string, SpotifyTrack>);
+    return ids.map(id => [id, this._trackCache[id]]).reduce((acc, [id, track]) => ({ ...acc, [id as string]: track as SpotifyTrack }), {} as Record<string, SpotifyTrack>);
   }
 
   async resolveURI(...uri: string[]) {

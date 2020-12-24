@@ -33,3 +33,8 @@ export function makeid(length: number) {
   }
   return result;
 }
+
+export function spotifyTrackID(raw: string): string | null {
+  if (raw === "spotify:delimiter") return null;
+  else return raw.split(":")[2] || null;
+}
