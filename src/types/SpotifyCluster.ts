@@ -128,10 +128,3 @@ export interface SpotifyCluster {
     timestamp: string;
     transfer_data_timestamp: string;
 }
-
-export interface SpotifyClusterUpdatePayload {
-    ack_id: string;
-    cluster: SpotifyCluster;
-    devices_that_changed: string[];
-    update_reason: string;
-}

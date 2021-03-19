@@ -1,5 +1,5 @@
 import axios from "axios";
-import { SpotifyTrack } from "../types/Media";
+import { SpotifyTrack } from "../types/SpotifyMedia";
 import { CORE_HEADERS } from "./const";
 
 interface TracksResult {

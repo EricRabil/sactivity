@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
-import { CoordinatedSpotifySocket, PlayerTrackResolver } from ".";
-import { SpotifyTrack } from "./types/Media";
+import { CoordinatedSpotifySocket, PlayerTrackResolver, SpotifyTrack } from ".";
 
 dotenv.config();
 
