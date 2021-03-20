@@ -67,10 +67,14 @@ export interface SpotifyConnectionIDObserver {
     (connectionID: string | null): any;
 }
 
+export interface SpotifyAccessTokenRegnerator {
+    (): Promise<string>;
+}
+
 /**
  * 
  */
-export class SpotifySocket {
+export abstract class SpotifySocket {
     /**
      * Constructs a Spotify socket from the given open.spotify.com cookies
      * @param cookie cookies you got
@@ -80,19 +84,38 @@ export class SpotifySocket {
         accessToken: string;
         socket: SpotifySocket;
     }> {
-        const { accessToken, socket } = await automatedCreateSpotifyClient(cookie);
-
-        return {
-            accessToken,
-            socket: new this(socket)
-        };
+        throw new Error("This must be overridden by an implementing class.");
     }
 
     /**
      * Constructs a SpotifySocket instance from an underlying WebSocket connection
      * @param socket connection to Spotify
      */
-    public constructor(public readonly socket: WebSocket) {
+    public constructor(socket: WebSocket) {
+        this.attach(socket);
+    }
+
+    #handlers: Map<string, Set<SpotifyMessageHandler>> = new Map();
+    #connectionIDObservers: Set<SpotifyConnectionIDObserver> = new Set();
+    #connectionID: string | null = null;
+    #startedPing: boolean = false;
+    #socket: WebSocket;
+
+    /**
+     * Generates a refreshed access token
+     */
+    public abstract generateAccessToken(): Promise<string>;
+
+    /**
+     * Bound function that can be passed to regnerate the token
+     */
+    public abstract get accessTokenRegenerator(): SpotifyAccessTokenRegnerator;
+
+    public attach(socket: WebSocket) {
+        if (this.#socket?.readyState !== this.#socket?.CLOSED) throw new Error("Cannot attach to multiple sockets.");
+
+        this.#socket = socket;
+
         socket.onmessage = ({ data }) => this.handlePayload(JSON.parse(data.toString()));
 
         this.registerHandler("pusher", ({ path, pathComponents, headers }) => {
@@ -108,11 +131,6 @@ export class SpotifySocket {
             }
         });
     }
-
-    #handlers: Map<string, Set<SpotifyMessageHandler>> = new Map();
-    #connectionIDObservers: Set<SpotifyConnectionIDObserver> = new Set();
-    #connectionID: string | null = null;
-    #startedPing: boolean = false;
 
     /**
      * Subscribe to changes to the Spotify connection ID
@@ -160,6 +178,10 @@ export class SpotifySocket {
         return this.#connectionID;
     }
 
+    public get socket(): WebSocket {
+        return this.#socket;
+    }
+
     /**
      * Handles an incoming payload from Spotify
      * @param payload payload received from Spotify
@@ -172,7 +194,12 @@ export class SpotifySocket {
                 this.deferredPing();
                 break;
             case "message":
-                const url = new URL(payload.uri);
+                try {
+                    var url = new URL(payload.uri);
+                } catch {
+                    var url = new URL(`hm://${payload.uri}`);
+                }
+                
                 const handlers = this.#handlers.get(url.hostname);
                 if (!handlers) break;
 

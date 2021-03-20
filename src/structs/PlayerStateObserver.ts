@@ -1,7 +1,8 @@
-import { Observer } from "../types/Observer";
 import { SpotifyPlayerState } from "../types/SpotifyCluster";
+import { debug } from "../util/debug";
 import { diff, Diffed } from "../util/diff";
 import { ClusterObserver } from "./ClusterObserver";
+import { ObserverWrapper } from "./internal/ObserverWrapper";
 import { SpotifySocket } from "./SpotifySocket";
 
 export type DiffedPlayerState = Diffed<SpotifyPlayerState>;
@@ -12,7 +13,7 @@ export interface PlayerStateCallback {
 
 function isSpotifyPlayerState(object: unknown): object is SpotifyPlayerState {
     if (typeof object !== "object" || object === null) return false;
-    for (const key of ["context_metadata", "duration", "index", "playback_id", "playback_quality", "timestamp", "track"]) {
+    for (const key of ["context_metadata", "duration", "playback_id", "playback_quality", "timestamp", "track"]) {
         if (!(key in object)) return false;
     }
     return true;
@@ -21,10 +22,9 @@ function isSpotifyPlayerState(object: unknown): object is SpotifyPlayerState {
 /**
  * Observes player states, firing a callback with a diffed representation and the updated state
  */
-export class PlayerStateObserver implements Observer<SpotifySocket> {
+export class PlayerStateObserver extends ObserverWrapper<SpotifySocket> {
     public constructor(callback: PlayerStateCallback) {
-        this.#callback = callback;
-        this.#observer = new ClusterObserver(clusters => {
+        super(new ClusterObserver(clusters => {
             const diffedStates: [DiffedPlayerState, SpotifyPlayerState][] = [];
 
             for (const cluster of clusters) {
@@ -43,23 +43,14 @@ export class PlayerStateObserver implements Observer<SpotifySocket> {
                 ]);
             }
 
+            if (!diffedStates.length) return;
+
             this.#callback(diffedStates);
-        });
+        }));
+
+        this.#callback = callback;
     }
 
     #callback: PlayerStateCallback;
     #states: Map<string, SpotifyPlayerState> = new Map();
-    #observer: ClusterObserver;
-
-    public observe(target: SpotifySocket) {
-        this.#observer.observe(target);
-    }
-
-    public unobserve(target: SpotifySocket) {
-        this.#observer.unobserve(target);
-    }
-
-    public disconnect() {
-        this.#observer.disconnect();
-    }
 }

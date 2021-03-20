@@ -1,5 +1,5 @@
 import EventEmitter from "eventemitter3";
-import StrictEventEmitter from "strict-event-emitter-types/types/src";
+import { TypedEventEmitter } from "../types/internal/TypedEventEmitter";
 import { Observer } from "../types/Observer";
 import { SpotifyPlayerState } from "../types/SpotifyCluster";
 import { isDifferent } from "../util/diff";
@@ -12,12 +12,10 @@ type Events = {
     [K in PlayerStateTrigger]: (state: SpotifyPlayerState) => void;
 }
 
-type StrictEvents = StrictEventEmitter<EventEmitter, Events>;
-
 /**
  * Emits events when various attributes of a state changes
  */
-export class PlayerStateEvents extends (EventEmitter as { new(): StrictEvents }) implements Observer<SpotifySocket> {
+export class PlayerStateEvents extends (EventEmitter as TypedEventEmitter<Events>) implements Observer<SpotifySocket> {
     public constructor() {
         super();
 

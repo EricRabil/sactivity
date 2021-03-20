@@ -4,7 +4,11 @@ import { SpotifyPlayerState } from "../types/SpotifyCluster";
 import { isDifferent } from "../util/diff";
 import { resolveTracks } from "../util/spotify-api";
 import { PlayerStateObserver } from "./PlayerStateObserver";
-import { SpotifySocket } from "./SpotifySocket";
+import { SpotifyAccessTokenRegnerator, SpotifySocket } from "./SpotifySocket";
+import { CoordinatedSpotifySocket } from "./CoordinatedSpotifySocket";
+import { Cache } from "../types/Cache";
+import { tryCached } from "../util/caching";
+import { ObserverWrapper } from "./internal/ObserverWrapper";
 
 export interface PlayerTrackResolverCallback {
     (states: {
@@ -13,30 +17,25 @@ export interface PlayerTrackResolverCallback {
     }[]): any;
 }
 
-export interface SpotifyTrackCache {
-    resolve(ids: string[]): Promise<Record<string, SpotifyTrack>>;
-    store(tracks: Record<string, SpotifyTrack>): Promise<void>;
-}
+export type SpotifyTrackCache = Cache<SpotifyTrack>;
 
 export interface PlayerTrackResolverOptions {
     cache?: SpotifyTrackCache;
+    accessTokenRegenerator?: SpotifyAccessTokenRegnerator;
+    dontInheritAccessTokenRegnerator?: boolean;
     accessToken: string;
 }
 
 /**
  * Fires a callback with a fully resolved track whenever the current track has changed
  */
-export class PlayerTrackResolver implements Observer<SpotifySocket> {
+export class PlayerTrackResolver extends ObserverWrapper<SpotifySocket> {
     /**
      * @param callback the callback to fire when a new track plays
      * @param options options for the resolver
      */
     constructor(callback: PlayerTrackResolverCallback, options: PlayerTrackResolverOptions) {
-        this.#callback = callback;
-        this.#accessToken = options.accessToken;
-        this.#cache = options.cache;
-
-        this.#observer = new PlayerStateObserver(async states => {
+        super(new PlayerStateObserver(async states => {
             const updatedStates = states.filter(([diff]) => isDifferent(diff.track.uri)).map(([, state]) => state);
 
             const tracks = await this.tracks(updatedStates.map(state => state.track.uri.slice(14)));
@@ -45,24 +44,28 @@ export class PlayerTrackResolver implements Observer<SpotifySocket> {
                 state,
                 track: tracks[state.track.uri.slice(14)]
             })));
-        });
+        }));
+
+        this.#callback = callback;
+        this.#accessToken = options.accessToken;
+        this.cache = options.cache;
+        this.#accessTokenRegenerator = options.accessTokenRegenerator;
+        this.dontInheritAccessTokenRegnerator = options.dontInheritAccessTokenRegnerator || false;
     }
 
     #accessToken: string;
     #callback: PlayerTrackResolverCallback;
-    #observer: PlayerStateObserver;
-    #cache: SpotifyTrackCache | undefined;
+    #accessTokenRegenerator?: SpotifyAccessTokenRegnerator;
+
+    public dontInheritAccessTokenRegnerator: boolean;
+    public cache: SpotifyTrackCache | undefined;
 
     public observe(socket: SpotifySocket): void {
-        this.#observer.observe(socket);
-    }
+        super.observe(socket);
 
-    public unobserve(socket: SpotifySocket): void {
-        this.#observer.unobserve(socket);
-    }
-
-    public disconnect(): void {
-        this.#observer.disconnect();
+        if (!this.dontInheritAccessTokenRegnerator && !this.#accessTokenRegenerator && socket instanceof CoordinatedSpotifySocket) {
+            this.#accessTokenRegenerator = socket.accessTokenRegenerator;
+        }
     }
 
     /**
@@ -71,12 +74,6 @@ export class PlayerTrackResolver implements Observer<SpotifySocket> {
      * @returns 
      */
     public async tracks(ids: string[]): Promise<Record<string, SpotifyTrack>> {
-        const tracks = this.#cache ? await this.#cache.resolve(ids) : {};
-        const missing = this.#cache ? ids.filter(id => !tracks[id]) : ids;
-
-        const resolved = await resolveTracks(missing, this.#accessToken);
-        if (this.#cache && Object.keys(resolved).length) await this.#cache.store(resolved);
-
-        return Object.assign(resolved, tracks);
+        return tryCached(ids, ids => resolveTracks(ids, this.#accessToken, this.#accessTokenRegenerator), this.cache);
     }
 }

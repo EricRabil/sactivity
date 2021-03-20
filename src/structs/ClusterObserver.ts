@@ -15,7 +15,7 @@ export interface SpotifyClusterUpdatePayload {
  */
 function isClusterUpdatePayload(object: unknown): object is SpotifyClusterUpdatePayload {
     if (typeof object !== "object" || object === null) return false;
-    for (const key of ["ack_id", "cluster", "devices_that_changed", "update_reason"]) {
+    for (const key of ["cluster", "devices_that_changed", "update_reason"]) {
         if (!(key in object)) return false;
     }
 

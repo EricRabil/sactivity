@@ -1,32 +1,36 @@
 import dotenv from "dotenv";
-import { CoordinatedSpotifySocket, PlayerTrackResolver, SpotifyTrack } from ".";
+import { AudioAnalysisEvents, Cache, CoordinatedSpotifySocket, SpotifyAnalysisResult } from ".";
 
 dotenv.config();
 
 const cookies = process.env.SPOTIFY_COOKIES as string;
 
-CoordinatedSpotifySocket.create(cookies).then(({ socket, accessToken }) => {
-    const cache: Map<string, SpotifyTrack> = new Map();
+function mockCache<T>(): Cache<T> {
+    const cache: Map<string, T> = new Map();
 
-    const observer = new PlayerTrackResolver(states => {
-        states.forEach(({ state, track }) => {
-            console.log(track);
-        });
-    }, {
-        accessToken,
-        cache: {
-            async resolve(ids: string[]): Promise<Record<string, SpotifyTrack>> {
-                return ids.reduce((acc, id) => cache.has(id) ? Object.assign(acc, {
-                    [id]: cache.get(id) as SpotifyTrack
-                }) : acc, {});
-            },
-            async store(tracks: Record<string, SpotifyTrack>) {
-                for (const id in tracks) {
-                    cache.set(id, tracks[id]);
-                }
+    return {
+        async resolve(ids: string[]): Promise<Record<string, T>> {
+            return ids.reduce((acc, id) => cache.has(id) ? Object.assign(acc, {
+                [id]: cache.get(id) as T
+            }) : acc, {});
+        },
+        async store(tracks: Record<string, T>) {
+            for (const id in tracks) {
+                cache.set(id, tracks[id]);
             }
         }
+    }
+}
+
+CoordinatedSpotifySocket.create(cookies).then(({ socket, accessToken }) => {
+    const analysisCache: Cache<SpotifyAnalysisResult> = mockCache();
+
+    const resolver = new AudioAnalysisEvents({
+        cache: analysisCache,
+        cookie: cookies
     });
 
-    observer.observe(socket);
+    resolver.on("tatum", () => console.log("tatum"));
+
+    resolver.observe(socket);
 });

@@ -1,6 +1,7 @@
-import { SpotifySocket } from "./SpotifySocket";
+import { SpotifyAccessTokenRegnerator, SpotifySocket } from "./SpotifySocket";
 import WebSocket from "isomorphic-ws";
-import { automatedCreateSpotifyClient, connectState, SpotifyDevice, subscribeToNotifications } from "../util/spotify-ws-api";
+import { automatedCreateSpotifyClient, connectState, getAccessToken, SpotifyDevice, subscribeToNotifications } from "../util/spotify-ws-api";
+import { debug } from "../util/debug";
 
 /**
  * Default coordinator for the initialization of a Spotify socket following a successful connection
@@ -20,7 +21,7 @@ export class CoordinatedSpotifySocket extends SpotifySocket {
 
         return {
             accessToken,
-            socket: new CoordinatedSpotifySocket(socket, accessToken, device)
+            socket: new CoordinatedSpotifySocket(socket, accessToken, cookie, device)
         };
     }
 
@@ -55,15 +56,33 @@ export class CoordinatedSpotifySocket extends SpotifySocket {
         platform_identifier: "web_player osx 11.3.0;microsoft edge 89.0.774.54;desktop"
     });
 
-    private constructor(socket: WebSocket, accessToken: string, public readonly device: SpotifyDevice = CoordinatedSpotifySocket.DEFAULT_DEVICE) {
+    private constructor(socket: WebSocket, accessToken: string, cookie: string, public readonly device: SpotifyDevice = CoordinatedSpotifySocket.DEFAULT_DEVICE) {
         super(socket);
 
         this.#accessToken = accessToken;
+        this.#cookie = cookie;
+
+        socket.onclose = async () => {
+            debug("disconnected from spotify.");
+
+            if (this.#forceClosed) return;
+            
+            debug("scheduling reconnect");
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            debug("reconnecting to spotify");
+            const { accessToken, socket } = await automatedCreateSpotifyClient(cookie);
+
+            this.#accessToken = accessToken;
+            this.attach(socket);
+        };
 
         this.observeConnectionID(async connectionID => {
             if (connectionID) {
                 await subscribeToNotifications(connectionID, this.#accessToken);
                 const cluster = await connectState(connectionID, this.#accessToken, device);
+
+                debug("we are connected to spotify.");
 
                 this.handlePayload({
                     headers: {
@@ -79,10 +98,26 @@ export class CoordinatedSpotifySocket extends SpotifySocket {
                     ],
                     type: "message",
                     uri: "hm://connect-state/v1/cluster"
-                })
+                });
             }
         });
     }
 
     #accessToken: string;
+    #cookie: string;
+    #forceClosed: boolean = false;
+
+    public close() {
+        this.#forceClosed = true;
+        this.socket.close();
+    }
+
+    public async generateAccessToken(): Promise<string> {
+        const { accessToken } = await getAccessToken(this.#cookie);
+        return this.#accessToken = accessToken;
+    }
+
+    public get accessTokenRegenerator(): SpotifyAccessTokenRegnerator {
+        return () => this.generateAccessToken();
+    }
 }
