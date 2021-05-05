@@ -127,6 +127,22 @@ export async function subscribeToNotifications(connectionID: string, accessToken
     });
 }
 
+
+export async function trackPlayback(connectionID: string, accessToken: string, device: SpotifyDevice): Promise<void> {
+    await axios.post("https://guc-spclient.spotify.com/track-playback/v1/devices", {
+        client_version: "harmony:4.12.0-38fc756",
+        connection_id: connectionID,
+        device,
+        volume: 65535
+    }, {
+        headers: {
+            ...CORE_HEADERS,
+            origin: "https://open.spotify.com",
+            authorization: `Bearer ${accessToken}`
+        }
+    });
+}
+
 /**
  * Connects the cluster state to a connection
  * @param connectionID ID of the connection to connect
