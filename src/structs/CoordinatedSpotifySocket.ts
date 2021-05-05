@@ -28,9 +28,9 @@ export class CoordinatedSpotifySocket extends SpotifySocket {
     /**
      * Default device metadata. The device_id is randomized at runtime.
      * 
-     * This object is frozen. If you need to mutate it, make your own.
+     * This object is sealed. If you need to mutate it, make your own.
      */
-    public static readonly DEFAULT_DEVICE: SpotifyDevice = Object.freeze({
+    public static readonly DEFAULT_DEVICE: SpotifyDevice = Object.seal({
         brand: "spotify",
         capabilities: {
             audio_podcasts: true,
