@@ -13,7 +13,7 @@ export interface PlayerStateCallback {
 
 function isSpotifyPlayerState(object: unknown): object is SpotifyPlayerState {
     if (typeof object !== "object" || object === null) return false;
-    for (const key of ["context_metadata", "duration", "playback_id", "playback_quality", "timestamp", "track"]) {
+    for (const key of ["duration", "playback_id", "playback_quality", "timestamp", "track"]) {
         if (!(key in object)) return false;
     }
     return true;

@@ -199,6 +199,8 @@ export abstract class SpotifySocket {
                 } catch {
                     var url = new URL(`hm://${payload.uri}`);
                 }
+
+                debug(`message: ${url}`)
                 
                 const handlers = this.#handlers.get(url.hostname);
                 if (!handlers) break;
@@ -240,8 +242,14 @@ export abstract class SpotifySocket {
      * Schedules a ping to go to Spotify after the SPOTIFY_PING_INTERVAL
      * @private
      */
+    #pendingPing: ReturnType<typeof setTimeout>;
     private deferredPing() {
         debug("scheduling deferred ping with interval %d", SPOTIFY_PING_INTERVAL);
-        setTimeout(() => this.ping(), SPOTIFY_PING_INTERVAL);
+        this.#pendingPing = setTimeout(() => this.ping(), SPOTIFY_PING_INTERVAL);
+    }
+
+    halt() {
+        clearTimeout(this.#pendingPing);
+        this.#handlers.clear();
     }
 }

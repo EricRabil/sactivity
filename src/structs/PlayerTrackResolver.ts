@@ -36,7 +36,7 @@ export class PlayerTrackResolver extends ObserverWrapper<SpotifySocket> {
      */
     constructor(callback: PlayerTrackResolverCallback, options: PlayerTrackResolverOptions) {
         super(new PlayerStateObserver(async states => {
-            const updatedStates = states.filter(([diff]) => isDifferent(diff.track.uri)).map(([, state]) => state);
+            const updatedStates = states.map(([ _, newState ]) => newState);
 
             const tracks = await this.tracks(updatedStates.map(state => state.track.uri.slice(14)));
 

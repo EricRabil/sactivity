@@ -2,6 +2,7 @@ import axios from "axios";
 import WebSocket from "isomorphic-ws";
 import { SpotifyCluster } from "../types/SpotifyCluster";
 import { CORE_HEADERS } from "./const";
+import { debug } from "./debug";
 
 export interface AccessToken {
     accessToken: string;
@@ -10,16 +11,34 @@ export interface AccessToken {
     isAnonymous: boolean;
 }
 
+async function getAccessToken_asScrape(cookie: string): Promise<AccessToken> {
+    // /<script[^>]id="config"[^>]*>(.*)<\/script><script id="baba"/
+    const { data } = await axios.get<string>("https://open.spotify.com/", {
+        headers: {
+            cookie,
+            ...CORE_HEADERS
+        },
+        responseType: "text"
+    });
+
+    return JSON.parse(/<script[^>]id="config"[^>]*>(.*)<\/script><script id="baba"/.exec(data)![1]);
+}
+
 /**
  * Gets an access token for connecting to the WebSocket server
  * @param cookie cookies from open.spotify.com
  * @returns the access token generation payload
  */
 export async function getAccessToken(cookie: string): Promise<AccessToken> {
+    if (1) {
+        return getAccessToken_asScrape(cookie);
+    }
+
     const { data } = await axios.get<AccessToken>("https://open.spotify.com/get_access_token?reason=transport&productType=web_player", {
         headers: {
             cookie,
-            ...CORE_HEADERS
+            ...CORE_HEADERS,
+            referer: "https://accounts.spotify.com/"
         }
     });
 
@@ -130,9 +149,10 @@ export async function subscribeToNotifications(connectionID: string, accessToken
 
 export async function trackPlayback(connectionID: string, accessToken: string, device: SpotifyDevice): Promise<void> {
     await axios.post("https://guc-spclient.spotify.com/track-playback/v1/devices", {
-        client_version: "harmony:4.12.0-38fc756",
+        client_version: "harmony:4.21.0-a4bc573",
         connection_id: connectionID,
         device,
+        outro_endcontent_snooping: false,
         volume: 65535
     }, {
         headers: {
@@ -150,7 +170,7 @@ export async function trackPlayback(connectionID: string, accessToken: string, d
  * @param device device associated to the connection
  */
 export async function connectState(connectionID: string, accessToken: string, device: SpotifyDevice): Promise<SpotifyCluster> {
-    const { data } = await axios.put<SpotifyCluster>(`https://guc-spclient.spotify.com/connect-state/v1/devices/hobs_${device.device_id}`, {
+    const { data } = await axios.put<SpotifyCluster>(`https://guc3-spclient.spotify.com/connect-state/v1/devices/hobs_${device.device_id}`, {
         device: {
             device_info: {
                 capabilities: {
@@ -170,4 +190,26 @@ export async function connectState(connectionID: string, accessToken: string, de
     });
 
     return data;
+}
+
+export interface SpotifyCommandOptions {
+    from: string;
+    to: string;
+    endpoint: string;
+    accessToken: string;
+    opts?: any;
+}
+
+export async function sendCommand({ from, accessToken, to, endpoint, opts = {} }: SpotifyCommandOptions) {
+    await axios.post(`https://guc-spclient.spotify.com/connect-state/v1/player/command/from/${from}/to/${to}`, {
+        command: {
+            endpoint,
+            ...opts
+        }
+    }, {
+        headers: {
+            ...CORE_HEADERS,
+            authorization: `Bearer ${accessToken}`
+        }
+    });
 }

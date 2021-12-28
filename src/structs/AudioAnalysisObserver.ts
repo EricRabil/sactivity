@@ -42,7 +42,7 @@ export class AudioAnalysisObserver extends ObserverWrapper<SpotifySocket> {
 
             this.#callback(updates);
 
-            await this.analyzeTracks(changedStates.flatMap(state => state.next_tracks.filter(track => !track.uri.includes("delimiter")).map(track => track.uri.slice(14))).slice(0, 5));
+            await this.analyzeTracks(changedStates.filter(state => state.next_tracks).flatMap(state => state.next_tracks.filter(track => !track.uri.includes("delimiter")).map(track => track.uri.slice(14))).slice(0, 5));
         }));
 
         this.#callback = callback;
