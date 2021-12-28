@@ -1,6 +1,6 @@
 {
   "name": "sactivity",
-  "version": "2.0.0-canary.5",
+  "version": "2.0.0",
   "description": "Spotify WebSocket Activity API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
